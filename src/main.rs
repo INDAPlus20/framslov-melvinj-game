@@ -50,95 +50,49 @@ fn random_vec(max_magnitude: f32) -> Vector2 {
 /// contain pretty much the same data.
 /// **********************************************************************
 #[derive(Debug)]
-enum ActorType {
+enum PhysType {
     Player,
-    Rock,
-    Shot,
+    Ball
 }
 
 #[derive(Debug)]
-struct Actor {
-    tag: ActorType,
+struct PhysObject {
+    tag: PhysType,
+    id: f32,
     pos: Point2,
-    facing: f32,
-    velocity: Vector2,
-    ang_vel: f32,
+    x_velocity: f32,
+    y_velocity: f32,
     bbox_size: f32,
-
-    // I am going to lazily overload "life" with a
-    // double meaning:
-    // for shots, it is the time left to live,
-    // for players and rocks, it is the actual hit points.
-    life: f32,
 }
-
-const PLAYER_LIFE: f32 = 1.0;
-const SHOT_LIFE: f32 = 2.0;
-const ROCK_LIFE: f32 = 1.0;
 
 const PLAYER_BBOX: f32 = 12.0;
 const ROCK_BBOX: f32 = 12.0;
 const SHOT_BBOX: f32 = 6.0;
 
-const MAX_ROCK_VEL: f32 = 50.0;
-
 /// *********************************************************************
 /// Now we have some constructor functions for different game objects.
 /// **********************************************************************
 
-fn create_player() -> Actor {
-    Actor {
-        tag: ActorType::Player,
+fn create_player() -> PhysObject {
+    PhysObject {
+        tag: PhysType::Player,
+        id: 0.0,
         pos: Point2::origin(),
-        facing: 0.,
-        velocity: na::zero(),
-        ang_vel: 0.,
+        x_velocity: 0.0,
+        y_velocity: 0.0,
         bbox_size: PLAYER_BBOX,
-        life: PLAYER_LIFE,
     }
 }
 
-fn create_rock() -> Actor {
-    Actor {
-        tag: ActorType::Rock,
+fn create_ball() -> PhysObject {
+    PhysObject {
+        tag: PhysType::Ball,
+        id: 30.0,
         pos: Point2::origin(),
-        facing: 0.,
-        velocity: na::zero(),
-        ang_vel: 0.,
+        x_velocity: 0.0,
+        y_velocity: 0.0,
         bbox_size: ROCK_BBOX,
-        life: ROCK_LIFE,
     }
-}
-
-fn create_shot() -> Actor {
-    Actor {
-        tag: ActorType::Shot,
-        pos: Point2::origin(),
-        facing: 0.,
-        velocity: na::zero(),
-        ang_vel: SHOT_ANG_VEL,
-        bbox_size: SHOT_BBOX,
-        life: SHOT_LIFE,
-    }
-}
-
-/// Create the given number of rocks.
-/// Makes sure that none of them are within the
-/// given exclusion zone (nominally the player)
-/// Note that this *could* create rocks outside the
-/// bounds of the playing field, so it should be
-/// called before `wrap_actor_position()` happens.
-fn create_rocks(num: i32, exclusion: Point2, min_radius: f32, max_radius: f32) -> Vec<Actor> {
-    assert!(max_radius > min_radius);
-    let new_rock = |_| {
-        let mut rock = create_rock();
-        let r_angle = rand::random::<f32>() * 2.0 * std::f32::consts::PI;
-        let r_distance = rand::random::<f32>() * (max_radius - min_radius) + min_radius;
-        rock.pos = exclusion + vec_from_angle(r_angle) * r_distance;
-        rock.velocity = random_vec(MAX_ROCK_VEL);
-        rock
-    };
-    (0..num).map(new_rock).collect()
 }
 
 /// *********************************************************************
@@ -163,7 +117,9 @@ const PLAYER_TURN_RATE: f32 = 3.0;
 /// Refire delay between shots, in seconds.
 const PLAYER_SHOT_TIME: f32 = 0.5;
 
-fn player_handle_input(actor: &mut Actor, input: &InputState, dt: f32) {
+    /// TODO 2D input based on player ID
+
+fn player_handle_input(actor: &mut PhysObject, input: &InputState, dt: f32) {
     actor.facing += dt * PLAYER_TURN_RATE * input.xaxis;
 
     if input.yaxis > 0.0 {
@@ -179,7 +135,9 @@ fn player_thrust(actor: &mut Actor, dt: f32) {
 
 const MAX_PHYSICS_VEL: f32 = 250.0;
 
-fn update_actor_position(actor: &mut Actor, dt: f32) {
+    /// TODO Update position
+
+fn update_physobject_position(actor: &mut PhysObject, dt: f32) {
     // Clamp the velocity to the max efficiently
     let norm_sq = actor.velocity.norm_squared();
     if norm_sq > MAX_PHYSICS_VEL.powi(2) {
@@ -209,10 +167,6 @@ fn wrap_actor_position(actor: &mut Actor, sx: f32, sy: f32) {
     }
 }
 
-fn handle_timed_life(actor: &mut Actor, dt: f32) {
-    actor.life -= dt;
-}
-
 /// Translates the world coordinate system, which
 /// has Y pointing up and the origin at the center,
 /// to the screen coordinate system, which has Y
@@ -229,6 +183,8 @@ fn world_to_screen_coords(screen_width: f32, screen_height: f32, point: Point2) 
 /// is our "asset management system".  All the file names and such are
 /// just hard-coded.
 /// **********************************************************************
+
+    /// TODO Handle assets
 
 struct Assets {
     player_image: graphics::Image,
@@ -269,28 +225,6 @@ impl Assets {
 }
 
 /// **********************************************************************
-/// The `InputState` is exactly what it sounds like, it just keeps track of
-/// the user's input state so that we turn keyboard events into something
-/// state-based and device-independent.
-/// **********************************************************************
-#[derive(Debug)]
-struct InputState {
-    xaxis: f32,
-    yaxis: f32,
-    fire: bool,
-}
-
-impl Default for InputState {
-    fn default() -> Self {
-        InputState {
-            xaxis: 0.0,
-            yaxis: 0.0,
-            fire: false,
-        }
-    }
-}
-
-/// **********************************************************************
 /// Now we're getting into the actual game loop.  The `MainState` is our
 /// game's "global" state, it keeps track of everything we need for
 /// actually running the game.
@@ -300,6 +234,8 @@ impl Default for InputState {
 /// (like `input`) a little more than we should, but for something
 /// this small it hardly matters.
 /// **********************************************************************
+
+    /// Mainstate
 
 struct MainState {
     player: Actor,
@@ -341,26 +277,7 @@ impl MainState {
         Ok(s)
     }
 
-    fn fire_player_shot(&mut self) {
-        self.player_shot_timeout = PLAYER_SHOT_TIME;
-
-        let player = &self.player;
-        let mut shot = create_shot();
-        shot.pos = player.pos;
-        shot.facing = player.facing;
-        let direction = vec_from_angle(shot.facing);
-        shot.velocity.x = SHOT_SPEED * direction.x;
-        shot.velocity.y = SHOT_SPEED * direction.y;
-
-        self.shots.push(shot);
-
-        let _ = self.assets.shot_sound.play();
-    }
-
-    fn clear_dead_stuff(&mut self) {
-        self.shots.retain(|s| s.life > 0.0);
-        self.rocks.retain(|r| r.life > 0.0);
-    }
+    /// TODO Collisions
 
     fn handle_collisions(&mut self) {
         for rock in &mut self.rocks {
@@ -403,7 +320,9 @@ fn print_instructions() {
     println!();
 }
 
-fn draw_actor(
+    /// TODO Draw
+
+fn draw_physobject(
     assets: &mut Assets,
     ctx: &mut Context,
     actor: &Actor,
@@ -466,8 +385,6 @@ impl EventHandler for MainState {
             // spawn more of them.
             self.handle_collisions();
 
-            self.clear_dead_stuff();
-
             self.check_for_level_respawn();
 
             // Finally we check for our end state.
@@ -493,14 +410,14 @@ impl EventHandler for MainState {
             let coords = (self.screen_width, self.screen_height);
 
             let p = &self.player;
-            draw_actor(assets, ctx, p, coords)?;
+            draw_physobject(assets, ctx, p, coords)?;
 
             for s in &self.shots {
-                draw_actor(assets, ctx, s, coords)?;
+                draw_physobject(assets, ctx, s, coords)?;
             }
 
             for r in &self.rocks {
-                draw_actor(assets, ctx, r, coords)?;
+                draw_physobject(assets, ctx, r, coords)?;
             }
         }
 
@@ -527,6 +444,8 @@ impl EventHandler for MainState {
         timer::yield_now();
         Ok(())
     }
+
+    /// TODO Keyboard events
 
     // Handle key events.  These just map keyboard events
     // and alter our input state appropriately.
