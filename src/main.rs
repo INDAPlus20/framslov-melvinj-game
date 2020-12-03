@@ -117,7 +117,7 @@ const PLAYER_TURN_RATE: f32 = 3.0;
 /// Refire delay between shots, in seconds.
 const PLAYER_SHOT_TIME: f32 = 0.5;
 
-    /// TODO 2D input based on player ID
+    // TODO 2D input based on player ID
 
 fn player_handle_input(actor: &mut PhysObject, input: &InputState, dt: f32) {
     actor.facing += dt * PLAYER_TURN_RATE * input.xaxis;
@@ -135,7 +135,7 @@ fn player_thrust(actor: &mut Actor, dt: f32) {
 
 const MAX_PHYSICS_VEL: f32 = 250.0;
 
-    /// TODO Update position
+    // TODO Update position
 
 fn update_physobject_position(actor: &mut PhysObject, dt: f32) {
     // Clamp the velocity to the max efficiently
@@ -184,7 +184,7 @@ fn world_to_screen_coords(screen_width: f32, screen_height: f32, point: Point2) 
 /// just hard-coded.
 /// **********************************************************************
 
-    /// TODO Handle assets
+    // TODO Handle assets
 
 struct Assets {
     player_image: graphics::Image,
@@ -225,29 +225,51 @@ impl Assets {
 }
 
 /// **********************************************************************
+/// The `InputState` is exactly what it sounds like, it just keeps track of
+/// the user's input state so that we turn keyboard events into something
+/// state-based and device-independent.
+/// **********************************************************************
+#[derive(Debug)]
+struct InputState {
+    xaxis1: f32,
+    yaxis1: f32,
+    xaxis2: f32,
+    yaxis2: f32,
+    grab1: bool,
+    grab2: bool,
+}
+
+impl Default for InputState {
+    fn default() -> Self {
+        InputState {
+            xaxis1: 0.0,
+            yaxis1: 0.0,
+            xaxis2: 0.0,
+            yaxis2: 0.0,
+            grab1: false,
+            grab2: false,
+        }
+    }
+}
+
+/// **********************************************************************
 /// Now we're getting into the actual game loop.  The `MainState` is our
 /// game's "global" state, it keeps track of everything we need for
 /// actually running the game.
-///
-/// We simply keep game objects in a vector for each actor type, and we
-/// probably mingle gameplay-state (like score) and hardware-state
-/// (like `input`) a little more than we should, but for something
-/// this small it hardly matters.
 /// **********************************************************************
 
     /// Mainstate
 
 struct MainState {
-    player: Actor,
-    shots: Vec<Actor>,
-    rocks: Vec<Actor>,
-    level: i32,
-    score: i32,
+    player1: PhysObject,
+    player2: PhysObject,
+    balls: Vec<PhysObject>,
+    score1: i32,
+    score2: i32,
     assets: Assets,
     screen_width: f32,
     screen_height: f32,
     input: InputState,
-    player_shot_timeout: f32,
 }
 
 impl MainState {
@@ -257,52 +279,44 @@ impl MainState {
         print_instructions();
 
         let assets = Assets::new(ctx)?;
-        let player = create_player();
-        let rocks = create_rocks(5, player.pos, 100.0, 250.0);
+        let player1 = create_player();
+        let player2 = create_player();
 
         let (width, height) = graphics::drawable_size(ctx);
         let s = MainState {
-            player,
-            shots: Vec::new(),
-            rocks,
-            level: 0,
-            score: 0,
+            player1,
+            player2,
+            balls: Vec::new(),
+            score1: 0,
+            score2: 0,
             assets,
             screen_width: width,
             screen_height: height,
             input: InputState::default(),
-            player_shot_timeout: 0.0,
         };
 
         Ok(s)
     }
 
-    /// TODO Collisions
-
-    fn handle_collisions(&mut self) {
-        for rock in &mut self.rocks {
-            let pdistance = rock.pos - self.player.pos;
-            if pdistance.norm() < (self.player.bbox_size + rock.bbox_size) {
-                self.player.life = 0.0;
+    fn collision_check(&mut self) -> (Vec<f32>, Vec<f32>) {
+        let mut balls1 = Vec::new();
+        let mut balls2 = Vec::new();
+        for ball in &mut self.balls {
+            let pdistance1 = ball.pos - self.player1.pos;
+            if pdistance1.norm() < (self.player1.bbox_size + ball.bbox_size) {
+                balls1.push(ball.id)
             }
-            for shot in &mut self.shots {
-                let distance = shot.pos - rock.pos;
-                if distance.norm() < (shot.bbox_size + rock.bbox_size) {
-                    shot.life = 0.0;
-                    rock.life = 0.0;
-                    self.score += 1;
-
-                    let _ = self.assets.hit_sound.play();
-                }
+            let pdistance2 = ball.pos - self.player2.pos;
+            if pdistance2.norm() < (self.player2.bbox_size + ball.bbox_size) {
+                balls2.push(ball.id)
             }
         }
+        return (balls1, balls2)
     }
 
     fn check_for_level_respawn(&mut self) {
-        if self.rocks.is_empty() {
-            self.level += 1;
-            let r = create_rocks(self.level + 5, self.player.pos, 100.0, 250.0);
-            self.rocks.extend(r);
+        if self.score1 >= 3 || self.score2 >= 3 {
+            // Reset game
         }
     }
 }
@@ -320,7 +334,7 @@ fn print_instructions() {
     println!();
 }
 
-    /// TODO Draw
+    // TODO Draw
 
 fn draw_physobject(
     assets: &mut Assets,
@@ -445,7 +459,7 @@ impl EventHandler for MainState {
         Ok(())
     }
 
-    /// TODO Keyboard events
+    // TODO Keyboard events
 
     // Handle key events.  These just map keyboard events
     // and alter our input state appropriately.
