@@ -113,57 +113,51 @@ const SHOT_ANG_VEL: f32 = 0.1;
 /// Acceleration in pixels per second.
 const PLAYER_THRUST: f32 = 100.0;
 /// Rotation in radians per second.
-const PLAYER_TURN_RATE: f32 = 3.0;
+const PLAYER_SPEED: f32 = 8.0;
 /// Refire delay between shots, in seconds.
 const PLAYER_SHOT_TIME: f32 = 0.5;
+/// Max velocity in pixels per second
+const MAX_PHYSICS_VEL: f32 = 200.0;
 
     // TODO 2D input based on player ID
 
-fn player_handle_input(actor: &mut PhysObject, input: &InputState, dt: f32) {
-    actor.facing += dt * PLAYER_TURN_RATE * input.xaxis;
-
-    if input.yaxis > 0.0 {
-        player_thrust(actor, dt);
-    }
+fn player_handle_input(object: &mut PhysObject, input: &InputState) {
+    object.x_velocity += PLAYER_SPEED * (input.xaxis1pos + input.xaxis1neg);
+    object.y_velocity += PLAYER_SPEED * (input.yaxis1pos + input.yaxis1neg);
 }
-
-fn player_thrust(actor: &mut Actor, dt: f32) {
-    let direction_vector = vec_from_angle(actor.facing);
-    let thrust_vector = direction_vector * (PLAYER_THRUST);
-    actor.velocity += thrust_vector * (dt);
-}
-
-const MAX_PHYSICS_VEL: f32 = 250.0;
 
     // TODO Update position
 
-fn update_physobject_position(actor: &mut PhysObject, dt: f32) {
-    // Clamp the velocity to the max efficiently
-    let norm_sq = actor.velocity.norm_squared();
-    if norm_sq > MAX_PHYSICS_VEL.powi(2) {
-        actor.velocity = actor.velocity / norm_sq.sqrt() * MAX_PHYSICS_VEL;
+fn update_object_position(object: &mut PhysObject, dt: f32) {
+    // Clamp the velocity to the max *efficiently*
+    if object.x_velocity.abs() > MAX_PHYSICS_VEL {
+        object.x_velocity = object.x_velocity.signum() * MAX_PHYSICS_VEL;
     }
-    let dv = actor.velocity * (dt);
-    actor.pos += dv;
-    actor.facing += actor.ang_vel;
+    if object.y_velocity.abs() > MAX_PHYSICS_VEL {
+        object.y_velocity = object.y_velocity.signum() * MAX_PHYSICS_VEL;
+    }
+    let dxv = object.x_velocity * dt;
+    let dyv = object.y_velocity * dt;
+    object.pos.x += dxv;
+    object.pos.y += dyv;
 }
 
 /// Takes an actor and wraps its position to the bounds of the
 /// screen, so if it goes off the left side of the screen it
 /// will re-enter on the right side and so on.
-fn wrap_actor_position(actor: &mut Actor, sx: f32, sy: f32) {
+fn wrap_actor_position(object: &mut PhysObject, sx: f32, sy: f32) {
     // Wrap screen
     let screen_x_bounds = sx / 2.0;
     let screen_y_bounds = sy / 2.0;
-    if actor.pos.x > screen_x_bounds {
-        actor.pos.x -= sx;
-    } else if actor.pos.x < -screen_x_bounds {
-        actor.pos.x += sx;
+    if object.pos.x > screen_x_bounds {
+        object.pos.x -= sx;
+    } else if object.pos.x < -screen_x_bounds {
+        object.pos.x += sx;
     };
-    if actor.pos.y > screen_y_bounds {
-        actor.pos.y -= sy;
-    } else if actor.pos.y < -screen_y_bounds {
-        actor.pos.y += sy;
+    if object.pos.y > screen_y_bounds {
+        object.pos.y -= sy;
+    } else if object.pos.y < -screen_y_bounds {
+        object.pos.y += sy;
     }
 }
 
@@ -215,11 +209,10 @@ impl Assets {
         })
     }
 
-    fn actor_image(&mut self, actor: &Actor) -> &mut graphics::Image {
-        match actor.tag {
-            ActorType::Player => &mut self.player_image,
-            ActorType::Rock => &mut self.rock_image,
-            ActorType::Shot => &mut self.shot_image,
+    fn actor_image(&mut self, object: &PhysObject) -> &mut graphics::Image {
+        match object.tag {
+            PhysType::Player => &mut self.player_image,
+            PhysType::Ball => &mut self.rock_image,
         }
     }
 }
@@ -231,10 +224,14 @@ impl Assets {
 /// **********************************************************************
 #[derive(Debug)]
 struct InputState {
-    xaxis1: f32,
-    yaxis1: f32,
-    xaxis2: f32,
-    yaxis2: f32,
+    xaxis1pos: f32,
+    xaxis1neg: f32,
+    yaxis1pos: f32,
+    yaxis1neg: f32,
+    xaxis2pos: f32,
+    xaxis2neg: f32,
+    yaxis2pos: f32,
+    yaxis2neg: f32,
     grab1: bool,
     grab2: bool,
 }
@@ -242,10 +239,14 @@ struct InputState {
 impl Default for InputState {
     fn default() -> Self {
         InputState {
-            xaxis1: 0.0,
-            yaxis1: 0.0,
-            xaxis2: 0.0,
-            yaxis2: 0.0,
+            xaxis1pos: 0.0,
+            xaxis1neg: 0.0,
+            yaxis1pos: 0.0,
+            yaxis1neg: 0.0,
+            xaxis2pos: 0.0,
+            xaxis2neg: 0.0,
+            yaxis2pos: 0.0,
+            yaxis2neg: 0.0,
             grab1: false,
             grab2: false,
         }
@@ -339,15 +340,14 @@ fn print_instructions() {
 fn draw_physobject(
     assets: &mut Assets,
     ctx: &mut Context,
-    actor: &Actor,
+    object: &PhysObject,
     world_coords: (f32, f32),
 ) -> GameResult {
     let (screen_w, screen_h) = world_coords;
-    let pos = world_to_screen_coords(screen_w, screen_h, actor.pos);
-    let image = assets.actor_image(actor);
+    let pos = world_to_screen_coords(screen_w, screen_h, object.pos);
+    let image = assets.actor_image(object);
     let drawparams = graphics::DrawParam::new()
         .dest(pos)
-        .rotation(actor.facing as f32)
         .offset(Point2::new(0.5, 0.5));
     graphics::draw(ctx, image, drawparams)
 }
@@ -365,49 +365,45 @@ impl EventHandler for MainState {
             let seconds = 1.0 / (DESIRED_FPS as f32);
 
             // Update the player state based on the user input.
-            player_handle_input(&mut self.player, &self.input, seconds);
-            self.player_shot_timeout -= seconds;
+            player_handle_input(&mut self.player1, &self.input);
+            
+            /*self.player_shot_timeout -= seconds;
             if self.input.fire && self.player_shot_timeout < 0.0 {
                 self.fire_player_shot();
-            }
+            }*/
 
             // Update the physics for all actors.
             // First the player...
-            update_actor_position(&mut self.player, seconds);
+            update_object_position(&mut self.player1, seconds);
             wrap_actor_position(
-                &mut self.player,
+                &mut self.player1,
                 self.screen_width as f32,
                 self.screen_height as f32,
             );
 
             // Then the shots...
-            for act in &mut self.shots {
-                update_actor_position(act, seconds);
-                wrap_actor_position(act, self.screen_width as f32, self.screen_height as f32);
-                handle_timed_life(act, seconds);
-            }
-
-            // And finally the rocks.
-            for act in &mut self.rocks {
-                update_actor_position(act, seconds);
-                wrap_actor_position(act, self.screen_width as f32, self.screen_height as f32);
+            for object in &mut self.balls {
+                update_object_position(object, seconds);
+                wrap_actor_position(object, self.screen_width as f32, self.screen_height as f32);
+                //handle_timed_life(object, seconds);
             }
 
             // Handle the results of things moving:
             // collision detection, object death, and if
             // we have killed all the rocks in the level,
             // spawn more of them.
-            self.handle_collisions();
+            self.collision_check();
 
             self.check_for_level_respawn();
 
             // Finally we check for our end state.
             // I want to have a nice death screen eventually,
             // but for now we just quit.
-            if self.player.life <= 0.0 {
+            
+            /*if self.player.life <= 0.0 {
                 println!("Game over!");
                 let _ = event::quit(ctx);
-            }
+            }*/
         }
 
         Ok(())
@@ -423,28 +419,28 @@ impl EventHandler for MainState {
             let assets = &mut self.assets;
             let coords = (self.screen_width, self.screen_height);
 
-            let p = &self.player;
+            let p = &self.player1;
             draw_physobject(assets, ctx, p, coords)?;
 
-            for s in &self.shots {
-                draw_physobject(assets, ctx, s, coords)?;
-            }
-
-            for r in &self.rocks {
-                draw_physobject(assets, ctx, r, coords)?;
+            for b in &self.balls {
+                draw_physobject(assets, ctx, b, coords)?;
             }
         }
 
         // And draw the GUI elements in the right places.
-        let level_dest = Point2::new(10.0, 10.0);
-        let score_dest = Point2::new(200.0, 10.0);
+        let score1_dest = Point2::new(10.0, 10.0);
+        let score2_dest = Point2::new(250.0, 10.0);
 
-        let level_str = format!("Level: {}", self.level);
-        let score_str = format!("Score: {}", self.score);
-        let level_display = graphics::Text::new((level_str, self.assets.font, 32.0));
-        let score_display = graphics::Text::new((score_str, self.assets.font, 32.0));
-        graphics::draw(ctx, &level_display, (level_dest, 0.0, graphics::WHITE))?;
-        graphics::draw(ctx, &score_display, (score_dest, 0.0, graphics::WHITE))?;
+        let score1_str = format!("X Velocity: {}", self.player1.x_velocity);
+        let score2_str = format!("Y Velocity: {}", self.player1.y_velocity);
+
+        //let score1_str = format!("X Input: {}", self.input.xaxis1pos + self.input.xaxis1neg);
+        //let score2_str = format!("Y Output: {}", self.input.yaxis1pos + self.input.yaxis1neg);
+
+        let score1_display = graphics::Text::new((score1_str, self.assets.font, 32.0));
+        let score2_display = graphics::Text::new((score2_str, self.assets.font, 32.0));
+        graphics::draw(ctx, &score1_display, (score1_dest, 0.0, graphics::WHITE))?;
+        graphics::draw(ctx, &score2_display, (score2_dest, 0.0, graphics::WHITE))?;
 
         // Then we flip the screen...
         graphics::present(ctx)?;
@@ -471,17 +467,20 @@ impl EventHandler for MainState {
         _repeat: bool,
     ) {
         match keycode {
-            KeyCode::Up => {
-                self.input.yaxis = 1.0;
+            KeyCode::W => {
+                self.input.yaxis1pos = 1.0;
             }
-            KeyCode::Left => {
-                self.input.xaxis = -1.0;
+            KeyCode::S => {
+                self.input.yaxis1neg = -1.0;
             }
-            KeyCode::Right => {
-                self.input.xaxis = 1.0;
+            KeyCode::D => {
+                self.input.xaxis1pos = 1.0;
+            }
+            KeyCode::A => {
+                self.input.xaxis1neg = -1.0;
             }
             KeyCode::Space => {
-                self.input.fire = true;
+                self.input.grab1 = true;
             }
             KeyCode::P => {
                 let img = graphics::screenshot(ctx).expect("Could not take screenshot");
@@ -495,14 +494,20 @@ impl EventHandler for MainState {
 
     fn key_up_event(&mut self, _ctx: &mut Context, keycode: KeyCode, _keymod: KeyMods) {
         match keycode {
-            KeyCode::Up => {
-                self.input.yaxis = 0.0;
+            KeyCode::W => {
+                self.input.yaxis1pos = 0.0;
             }
-            KeyCode::Left | KeyCode::Right => {
-                self.input.xaxis = 0.0;
+            KeyCode::S => {
+                self.input.yaxis1neg = 0.0;
+            }
+            KeyCode::D => {
+                self.input.xaxis1pos = 0.0;
+            }
+            KeyCode::A => {
+                self.input.xaxis1neg = 0.0;
             }
             KeyCode::Space => {
-                self.input.fire = false;
+                self.input.grab1 = true;
             }
             _ => (), // Do nothing
         }
