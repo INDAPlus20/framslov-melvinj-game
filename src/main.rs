@@ -59,6 +59,7 @@ enum PhysType {
 struct PhysObject {
     tag: PhysType,
     id: f32,
+    hold: f32,
     pos: Point2,
     x_velocity: f32,
     y_velocity: f32,
@@ -76,7 +77,8 @@ const SHOT_BBOX: f32 = 6.0;
 fn create_player() -> PhysObject {
     PhysObject {
         tag: PhysType::Player,
-        id: 0.0,
+        id: 1.0,
+        hold: 0.0,
         pos: Point2::origin(),
         x_velocity: 0.0,
         y_velocity: 0.0,
@@ -84,15 +86,48 @@ fn create_player() -> PhysObject {
     }
 }
 
-fn create_ball() -> PhysObject {
-    PhysObject {
+fn create_balls(balls_num: f32, size: (f32, f32)) -> Vec<PhysObject> {
+    let mut balls = Vec::new();
+    let distance = 100.0;
+    balls.append(&mut create_balls_collumn((balls_num / 2.0).ceil(), distance, size));
+    balls.append(&mut create_balls_collumn((balls_num / 2.0).floor(), distance + 50.0, size));
+    return balls;
+}
+
+fn create_balls_collumn(balls_num: f32, distance: f32, size: (f32, f32)) -> Vec<PhysObject> {
+    let (width, height) = size;
+    let space = 50.0;
+    let mut space_iter = (height - (balls_num - 1.0) * 50.0) / 2.0;
+    let mut balls = Vec::new();
+    for _ in 0..balls_num as i32 {
+        balls.append(&mut create_ball_pair(width / 2.0 + distance, space_iter, size));
+        space_iter += space;
+    }
+    return balls;
+}
+
+fn create_ball_pair(x: f32, y: f32, size: (f32, f32)) -> Vec<PhysObject> {
+    let (width, height) = size;
+    let mut balls = Vec::new();
+    balls.push(PhysObject {
         tag: PhysType::Ball,
         id: 30.0,
-        pos: Point2::origin(),
+        hold: 0.0,
+        pos: Point2::new(width / 2.0 + x, height / 2.0 + y),
         x_velocity: 0.0,
         y_velocity: 0.0,
         bbox_size: ROCK_BBOX,
-    }
+    });
+    balls.push(PhysObject {
+        tag: PhysType::Ball,
+        id: 30.0,
+        hold: 0.0,
+        pos: Point2::new(width / 2.0 - x, height / 2.0 - y),
+        x_velocity: 0.0,
+        y_velocity: 0.0,
+        bbox_size: ROCK_BBOX,
+    });
+    return balls;
 }
 
 /// *********************************************************************
@@ -232,8 +267,6 @@ struct InputState {
     xaxis2neg: f32,
     yaxis2pos: f32,
     yaxis2neg: f32,
-    grab1: bool,
-    grab2: bool,
 }
 
 impl Default for InputState {
@@ -247,8 +280,6 @@ impl Default for InputState {
             xaxis2neg: 0.0,
             yaxis2pos: 0.0,
             yaxis2neg: 0.0,
-            grab1: false,
-            grab2: false,
         }
     }
 }
@@ -278,16 +309,18 @@ impl MainState {
         println!("Game resource path: {:?}", ctx.filesystem);
 
         print_instructions();
+        
+        let (width, height) = graphics::drawable_size(ctx);
 
         let assets = Assets::new(ctx)?;
         let player1 = create_player();
         let player2 = create_player();
+        let balls = create_balls(6.0, (width, height));
 
-        let (width, height) = graphics::drawable_size(ctx);
         let s = MainState {
             player1,
             player2,
-            balls: Vec::new(),
+            balls,
             score1: 0,
             score2: 0,
             assets,
@@ -392,7 +425,6 @@ impl EventHandler for MainState {
             // collision detection, object death, and if
             // we have killed all the rocks in the level,
             // spawn more of them.
-            self.collision_check();
 
             self.check_for_level_respawn();
 
@@ -431,7 +463,7 @@ impl EventHandler for MainState {
         let score1_dest = Point2::new(10.0, 10.0);
         let score2_dest = Point2::new(250.0, 10.0);
 
-        let score1_str = format!("X Velocity: {}", self.player1.x_velocity);
+        let score1_str = format!("X Velocity: {}", self.player1.hold);
         let score2_str = format!("Y Velocity: {}", self.player1.y_velocity);
 
         //let score1_str = format!("X Input: {}", self.input.xaxis1pos + self.input.xaxis1neg);
@@ -480,7 +512,10 @@ impl EventHandler for MainState {
                 self.input.xaxis1neg = -1.0;
             }
             KeyCode::Space => {
-                self.input.grab1 = true;
+                let coll_balls = self.collision_check();
+                if self.player1.hold == 0.0 && !coll_balls.0.is_empty() {
+                    self.player1.hold = coll_balls.0[0];
+                }
             }
             KeyCode::P => {
                 let img = graphics::screenshot(ctx).expect("Could not take screenshot");
@@ -507,7 +542,7 @@ impl EventHandler for MainState {
                 self.input.xaxis1neg = 0.0;
             }
             KeyCode::Space => {
-                self.input.grab1 = true;
+                self.player1.hold = 0.0;
             }
             _ => (), // Do nothing
         }
