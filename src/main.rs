@@ -16,6 +16,7 @@ use rand;
 
 use std::env;
 use std::path;
+use std::cell::Cell;
 
 type Point2 = na::Point2<f32>;
 type Vector2 = na::Vector2<f32>;
@@ -66,6 +67,26 @@ struct PhysObject {
     bbox_size: f32,
 }
 
+thread_local!(static BALL_ID: Cell<f32> = Cell::new(2.0));
+
+impl PhysObject {
+    fn new_ball_id(pos: Point2,) -> PhysObject {
+        BALL_ID.with(|thread_id| {
+            let id = thread_id.get();
+            thread_id.set(id + 1.0);
+            PhysObject {
+                tag: PhysType::Ball,
+                id,
+                hold: 0.0,
+                pos,
+                x_velocity: 0.0,
+                y_velocity: 0.0,
+                bbox_size: ROCK_BBOX
+            }
+        })
+    }
+}
+
 const PLAYER_BBOX: f32 = 12.0;
 const ROCK_BBOX: f32 = 12.0;
 const SHOT_BBOX: f32 = 6.0;
@@ -82,7 +103,7 @@ fn create_player() -> PhysObject {
         pos: Point2::origin(),
         x_velocity: 0.0,
         y_velocity: 0.0,
-        bbox_size: PLAYER_BBOX,
+        bbox_size: PLAYER_BBOX
     }
 }
 
@@ -109,25 +130,29 @@ fn create_balls_collumn(balls_num: f32, distance: f32, size: (f32, f32)) -> Vec<
 fn create_ball_pair(x: f32, y: f32, size: (f32, f32)) -> Vec<PhysObject> {
     let (width, height) = size;
     let mut balls = Vec::new();
-    balls.push(PhysObject {
-        tag: PhysType::Ball,
-        id: 30.0,
-        hold: 0.0,
-        pos: Point2::new(width / 2.0 + x, height / 2.0 + y),
-        x_velocity: 0.0,
-        y_velocity: 0.0,
-        bbox_size: ROCK_BBOX,
-    });
-    balls.push(PhysObject {
-        tag: PhysType::Ball,
-        id: 30.0,
-        hold: 0.0,
-        pos: Point2::new(width / 2.0 - x, height / 2.0 - y),
-        x_velocity: 0.0,
-        y_velocity: 0.0,
-        bbox_size: ROCK_BBOX,
-    });
+    balls.push(PhysObject::new_ball_id(Point2::new(width / 2.0 + x, height / 2.0 + y)));
+    balls.push(PhysObject::new_ball_id(Point2::new(width / 2.0 - x, height / 2.0 - y)));
+    
     return balls;
+}
+
+fn ball_id_to_elem(balls: &Vec<PhysObject>, id: f32) -> Option<usize> {
+    for (index, ball) in balls.iter().enumerate() {
+        if ball.id == id {
+            return Some(index);
+        }
+    }
+    return None;
+}
+
+fn ball_follow(player: &PhysObject, balls: &mut Vec<PhysObject>) {
+    let index = ball_id_to_elem(&balls, player.hold);
+    if index.is_some() {
+        match index {
+            Some(x) => balls[x].pos = player.pos,
+            _ => ()
+        }
+    }
 }
 
 /// *********************************************************************
@@ -413,6 +438,8 @@ impl EventHandler for MainState {
                 self.screen_width as f32,
                 self.screen_height as f32,
             );
+            ball_follow(&self.player1, &mut self.balls);
+            ball_follow(&self.player2, &mut self.balls);
 
             // Then the shots...
             for object in &mut self.balls {
@@ -465,9 +492,6 @@ impl EventHandler for MainState {
 
         let score1_str = format!("X Velocity: {}", self.player1.hold);
         let score2_str = format!("Y Velocity: {}", self.player1.y_velocity);
-
-        //let score1_str = format!("X Input: {}", self.input.xaxis1pos + self.input.xaxis1neg);
-        //let score2_str = format!("Y Output: {}", self.input.yaxis1pos + self.input.yaxis1neg);
 
         let score1_display = graphics::Text::new((score1_str, self.assets.font, 32.0));
         let score2_display = graphics::Text::new((score2_str, self.assets.font, 32.0));
@@ -542,6 +566,14 @@ impl EventHandler for MainState {
                 self.input.xaxis1neg = 0.0;
             }
             KeyCode::Space => {
+                let id = ball_id_to_elem(&self.balls, self.player1.hold);
+                if id.is_some() {
+                    match id {
+                        Some(x) => {self.balls[x].x_velocity = self.player1.x_velocity;
+                            self.balls[x].y_velocity = self.player1.y_velocity;}
+                        _ => ()
+                    }
+                }
                 self.player1.hold = 0.0;
             }
             _ => (), // Do nothing
