@@ -112,26 +112,27 @@ fn create_balls(balls_num: f32, size: (f32, f32)) -> Vec<PhysObject> {
     let distance = 100.0;
     balls.append(&mut create_balls_collumn((balls_num / 2.0).ceil(), distance, size));
     balls.append(&mut create_balls_collumn((balls_num / 2.0).floor(), distance + 50.0, size));
+
     return balls;
 }
 
 fn create_balls_collumn(balls_num: f32, distance: f32, size: (f32, f32)) -> Vec<PhysObject> {
-    let (width, height) = size;
     let space = 50.0;
-    let mut space_iter = (height - (balls_num - 1.0) * 50.0) / 2.0;
+    let mut space_iter = -((balls_num - 1.0) * 50.0) / 2.0;
     let mut balls = Vec::new();
     for _ in 0..balls_num as i32 {
-        balls.append(&mut create_ball_pair(width / 2.0 + distance, space_iter, size));
+        balls.append(&mut create_ball_pair(distance, space_iter, size));
         space_iter += space;
     }
+
     return balls;
 }
 
 fn create_ball_pair(x: f32, y: f32, size: (f32, f32)) -> Vec<PhysObject> {
     let (width, height) = size;
     let mut balls = Vec::new();
-    balls.push(PhysObject::new_ball_id(Point2::new(width / 2.0 + x, height / 2.0 + y)));
-    balls.push(PhysObject::new_ball_id(Point2::new(width / 2.0 - x, height / 2.0 - y)));
+    balls.push(PhysObject::new_ball_id(Point2::new(-x, y)));
+    balls.push(PhysObject::new_ball_id(Point2::new(x, y)));
     
     return balls;
 }
@@ -142,6 +143,7 @@ fn ball_id_to_elem(balls: &Vec<PhysObject>, id: f32) -> Option<usize> {
             return Some(index);
         }
     }
+    
     return None;
 }
 
@@ -188,7 +190,7 @@ fn player_handle_input(object: &mut PhysObject, input: &InputState) {
 
     // TODO Update position
 
-fn update_object_position(object: &mut PhysObject, dt: f32) {
+fn update_object_position(object: &mut PhysObject, width: f32, height: f32, dt: f32) {
     // Clamp the velocity to the max *efficiently*
     if object.x_velocity.abs() > MAX_PHYSICS_VEL {
         object.x_velocity = object.x_velocity.signum() * MAX_PHYSICS_VEL;
@@ -196,10 +198,33 @@ fn update_object_position(object: &mut PhysObject, dt: f32) {
     if object.y_velocity.abs() > MAX_PHYSICS_VEL {
         object.y_velocity = object.y_velocity.signum() * MAX_PHYSICS_VEL;
     }
+
     let dxv = object.x_velocity * dt;
     let dyv = object.y_velocity * dt;
-    object.pos.x += dxv;
-    object.pos.y += dyv;
+
+    if object.pos.x + dxv < -width / 2.0 {
+        object.pos.x = -width - (object.pos.x + dxv);
+        object.x_velocity *= -1.0;
+    }
+    else if object.pos.x + dxv > width / 2.0 {
+        object.pos.x = width - (object.pos.x + dxv);
+        object.x_velocity *= -1.0;
+    }
+    else {
+        object.pos.x += dxv;
+    }
+
+    if object.pos.y + dyv < height / -2.0 {
+        object.pos.y = -height - (object.pos.y + dyv);
+        object.y_velocity *= -1.0;
+    }
+    else if object.pos.y + dyv > height / 2.0 {
+        object.pos.y = height - (object.pos.y + dyv);
+        object.y_velocity *= -1.0;
+    }
+    else {
+        object.pos.y += dyv;
+    }
 }
 
 /// Takes an actor and wraps its position to the bounds of the
@@ -432,21 +457,18 @@ impl EventHandler for MainState {
 
             // Update the physics for all actors.
             // First the player...
-            update_object_position(&mut self.player1, seconds);
-            wrap_actor_position(
-                &mut self.player1,
-                self.screen_width as f32,
-                self.screen_height as f32,
-            );
-            ball_follow(&self.player1, &mut self.balls);
-            ball_follow(&self.player2, &mut self.balls);
+            update_object_position(&mut self.player1, self.screen_width as f32, self.screen_height as f32, seconds);
+            wrap_actor_position(&mut self.player1, self.screen_width as f32, self.screen_height as f32);
 
-            // Then the shots...
+            // Then the balls...
             for object in &mut self.balls {
-                update_object_position(object, seconds);
-                wrap_actor_position(object, self.screen_width as f32, self.screen_height as f32);
+                update_object_position(object, self.screen_width as f32, self.screen_height as f32, seconds);
+                //wrap_actor_position(object, self.screen_width as f32, self.screen_height as f32);
                 //handle_timed_life(object, seconds);
             }
+
+            ball_follow(&self.player1, &mut self.balls);
+            ball_follow(&self.player2, &mut self.balls);
 
             // Handle the results of things moving:
             // collision detection, object death, and if
@@ -490,7 +512,7 @@ impl EventHandler for MainState {
         let score1_dest = Point2::new(10.0, 10.0);
         let score2_dest = Point2::new(250.0, 10.0);
 
-        let score1_str = format!("X Velocity: {}", self.player1.hold);
+        let score1_str = format!("X Velocity: {}", self.player1.x_velocity);
         let score2_str = format!("Y Velocity: {}", self.player1.y_velocity);
 
         let score1_display = graphics::Text::new((score1_str, self.assets.font, 32.0));
