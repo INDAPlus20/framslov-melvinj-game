@@ -25,11 +25,8 @@ use libloading::{Library, Symbol};
 use std::fs::{self};
 use std::path::Path;
 
-pub mod structs;
-pub use structs::*;
-
-type TestFunc = unsafe fn(i32, i32) -> i32;
-type AIFunc = unsafe fn(&MainState) -> &InputState;
+type AddFunc = unsafe fn(isize, isize) -> isize;
+type AIFunc = unsafe fn(&GameState) -> InputState;
 
 type Point2 = na::Point2<f32>;
 type Vector2 = na::Vector2<f32>;
@@ -74,7 +71,7 @@ struct PhysObject {
     tag: PhysType,
     id: f32,
     hold: f32,
-    pos: Point2,
+    pos: (f32, f32),
     x_velocity: f32,
     y_velocity: f32,
     bbox_size: f32,
@@ -83,7 +80,7 @@ struct PhysObject {
 thread_local!(static BALL_ID: Cell<f32> = Cell::new(2.0));
 
 impl PhysObject {
-    fn new_ball_id(pos: Point2,) -> PhysObject {
+    fn new_ball_id(pos: (f32, f32)) -> PhysObject {
         BALL_ID.with(|thread_id| {
             let id = thread_id.get();
             thread_id.set(id + 1.0);
@@ -97,6 +94,10 @@ impl PhysObject {
                 bbox_size: ROCK_BBOX
             }
         })
+    }
+
+    fn get_pos_p2(&self) -> Point2 {
+        Point2::new(self.pos.0, self.pos.1)
     }
 }
 
@@ -113,7 +114,7 @@ fn create_player() -> PhysObject {
         tag: PhysType::Player,
         id: 1.0,
         hold: 0.0,
-        pos: Point2::origin(),
+        pos: (0.0,0.0),//Origin
         x_velocity: 0.0,
         y_velocity: 0.0,
         bbox_size: PLAYER_BBOX
@@ -144,8 +145,8 @@ fn create_balls_collumn(balls_num: f32, distance: f32, size: (f32, f32)) -> Vec<
 fn create_ball_pair(x: f32, y: f32, size: (f32, f32)) -> Vec<PhysObject> {
     let (width, height) = size;
     let mut balls = Vec::new();
-    balls.push(PhysObject::new_ball_id(Point2::new(-x, y)));
-    balls.push(PhysObject::new_ball_id(Point2::new(x, y)));
+    balls.push(PhysObject::new_ball_id((-x, y)));
+    balls.push(PhysObject::new_ball_id((x, y)));
     
     return balls;
 }
@@ -215,28 +216,28 @@ fn update_object_position(object: &mut PhysObject, width: f32, height: f32, dt: 
     let dxv = object.x_velocity * dt;
     let dyv = object.y_velocity * dt;
 
-    if object.pos.x + dxv < -width / 2.0 {
-        object.pos.x = -width - (object.pos.x + dxv);
+    if object.pos.0 + dxv < -width / 2.0 {
+        object.pos.0 = -width - (object.pos.0 + dxv);
         object.x_velocity *= -1.0;
     }
-    else if object.pos.x + dxv > width / 2.0 {
-        object.pos.x = width - (object.pos.x + dxv);
+    else if object.pos.0 + dxv > width / 2.0 {
+        object.pos.0 = width - (object.pos.0 + dxv);
         object.x_velocity *= -1.0;
     }
     else {
-        object.pos.x += dxv;
+        object.pos.0 += dxv;
     }
 
-    if object.pos.y + dyv < height / -2.0 {
-        object.pos.y = -height - (object.pos.y + dyv);
+    if object.pos.1 + dyv < height / -2.0 {
+        object.pos.1 = -height - (object.pos.1 + dyv);
         object.y_velocity *= -1.0;
     }
-    else if object.pos.y + dyv > height / 2.0 {
-        object.pos.y = height - (object.pos.y + dyv);
+    else if object.pos.1 + dyv > height / 2.0 {
+        object.pos.1 = height - (object.pos.1 + dyv);
         object.y_velocity *= -1.0;
     }
     else {
-        object.pos.y += dyv;
+        object.pos.1 += dyv;
     }
 }
 
@@ -247,15 +248,15 @@ fn wrap_actor_position(object: &mut PhysObject, sx: f32, sy: f32) {
     // Wrap screen
     let screen_x_bounds = sx / 2.0;
     let screen_y_bounds = sy / 2.0;
-    if object.pos.x > screen_x_bounds {
-        object.pos.x -= sx;
-    } else if object.pos.x < -screen_x_bounds {
-        object.pos.x += sx;
+    if object.pos.0 > screen_x_bounds {
+        object.pos.0 -= sx;
+    } else if object.pos.0 < -screen_x_bounds {
+        object.pos.0 += sx;
     };
-    if object.pos.y > screen_y_bounds {
-        object.pos.y -= sy;
-    } else if object.pos.y < -screen_y_bounds {
-        object.pos.y += sy;
+    if object.pos.1 > screen_y_bounds {
+        object.pos.1 -= sy;
+    } else if object.pos.1 < -screen_y_bounds {
+        object.pos.1 += sy;
     }
 }
 
@@ -321,15 +322,15 @@ impl Assets {
 /// state-based and device-independent.
 /// **********************************************************************
 #[derive(Debug)]
-struct InputState {
-    xaxis1pos: f32,
-    xaxis1neg: f32,
-    yaxis1pos: f32,
-    yaxis1neg: f32,
-    xaxis2pos: f32,
-    xaxis2neg: f32,
-    yaxis2pos: f32,
-    yaxis2neg: f32,
+pub struct InputState {
+    pub xaxis1pos: f32,
+    pub xaxis1neg: f32,
+    pub yaxis1pos: f32,
+    pub yaxis1neg: f32,
+    pub xaxis2pos: f32,
+    pub xaxis2neg: f32,
+    pub yaxis2pos: f32,
+    pub yaxis2neg: f32,
 }
 
 impl Default for InputState {
@@ -356,19 +357,25 @@ impl Default for InputState {
     /// Mainstate
 
 struct MainState {
+    game: GameState,
+    assets: Assets,
+    scriptname: String,
+}
+
+struct GameState {
     player1: PhysObject,
     player2: PhysObject,
     balls: Vec<PhysObject>,
     score1: i32,
     score2: i32,
-    assets: Assets,
     screen_width: f32,
     screen_height: f32,
-    input: InputState,
+    input1: InputState,
+    input2: InputState,
 }
 
 impl MainState {
-    fn new(ctx: &mut Context) -> GameResult<MainState> {
+    fn new(ctx: &mut Context, name: String) -> GameResult<MainState> {
         println!("Game resource path: {:?}", ctx.filesystem);
 
         print_instructions();
@@ -379,17 +386,21 @@ impl MainState {
         let player1 = create_player();
         let player2 = create_player();
         let balls = create_balls(6.0, (width, height));
-
-        let s = MainState {
+        let g = GameState {
             player1,
             player2,
             balls,
             score1: 0,
             score2: 0,
-            assets,
             screen_width: width,
             screen_height: height,
-            input: InputState::default(),
+            input1: InputState::default(),
+            input2: InputState::default(),
+        };
+        let s = MainState {
+            game: g,
+            assets: assets,
+            scriptname: name,
         };
 
         Ok(s)
@@ -398,13 +409,13 @@ impl MainState {
     fn collision_check(&mut self) -> (Vec<f32>, Vec<f32>) {
         let mut balls1 = Vec::new();
         let mut balls2 = Vec::new();
-        for ball in &mut self.balls {
-            let pdistance1 = ball.pos - self.player1.pos;
-            if pdistance1.norm() < (self.player1.bbox_size + ball.bbox_size) {
+        for ball in &mut self.game.balls {
+            let pdistance1 = ball.get_pos_p2() - self.game.player1.get_pos_p2();
+            if pdistance1.norm() < (self.game.player1.bbox_size + ball.bbox_size) {
                 balls1.push(ball.id)
             }
-            let pdistance2 = ball.pos - self.player2.pos;
-            if pdistance2.norm() < (self.player2.bbox_size + ball.bbox_size) {
+            let pdistance2 = ball.get_pos_p2() - self.game.player2.get_pos_p2();
+            if pdistance2.norm() < (self.game.player2.bbox_size + ball.bbox_size) {
                 balls2.push(ball.id)
             }
         }
@@ -412,7 +423,7 @@ impl MainState {
     }
 
     fn check_for_level_respawn(&mut self) {
-        if self.score1 >= 3 || self.score2 >= 3 {
+        if self.game.score1 >= 3 || self.game.score2 >= 3 {
             // Reset game
         }
     }
@@ -440,7 +451,7 @@ fn draw_physobject(
     world_coords: (f32, f32),
 ) -> GameResult {
     let (screen_w, screen_h) = world_coords;
-    let pos = world_to_screen_coords(screen_w, screen_h, object.pos);
+    let pos = world_to_screen_coords(screen_w, screen_h, object.get_pos_p2());
     let image = assets.actor_image(object);
     let drawparams = graphics::DrawParam::new()
         .dest(pos)
@@ -461,7 +472,10 @@ impl EventHandler for MainState {
             let seconds = 1.0 / (DESIRED_FPS as f32);
 
             // Update the player state based on the user input.
-            player_handle_input(&mut self.player1, &self.input);
+            let scriptname = &(&(self.scriptname)).clone();
+            println!("Attempting to generate input");
+            self.game.input2 = ai_generate_input(&mut self.game, scriptname);
+            player_handle_input(&mut self.game.player1, &self.game.input1);
             
             /*self.player_shot_timeout -= seconds;
             if self.input.fire && self.player_shot_timeout < 0.0 {
@@ -470,18 +484,18 @@ impl EventHandler for MainState {
 
             // Update the physics for all actors.
             // First the player...
-            update_object_position(&mut self.player1, self.screen_width as f32, self.screen_height as f32, seconds);
-            wrap_actor_position(&mut self.player1, self.screen_width as f32, self.screen_height as f32);
+            update_object_position(&mut self.game.player1, self.game.screen_width as f32, self.game.screen_height as f32, seconds);
+            wrap_actor_position(&mut self.game.player1, self.game.screen_width as f32, self.game.screen_height as f32);
 
             // Then the balls...
-            for object in &mut self.balls {
-                update_object_position(object, self.screen_width as f32, self.screen_height as f32, seconds);
+            for object in &mut self.game.balls {
+                update_object_position(object, self.game.screen_width as f32, self.game.screen_height as f32, seconds);
                 //wrap_actor_position(object, self.screen_width as f32, self.screen_height as f32);
                 //handle_timed_life(object, seconds);
             }
 
-            ball_follow(&self.player1, &mut self.balls);
-            ball_follow(&self.player2, &mut self.balls);
+            ball_follow(&self.game.player1, &mut self.game.balls);
+            ball_follow(&self.game.player2, &mut self.game.balls);
 
             // Handle the results of things moving:
             // collision detection, object death, and if
@@ -511,12 +525,12 @@ impl EventHandler for MainState {
         // Loop over all objects drawing them...
         {
             let assets = &mut self.assets;
-            let coords = (self.screen_width, self.screen_height);
+            let coords = (self.game.screen_width, self.game.screen_height);
 
-            let p = &self.player1;
+            let p = &self.game.player1;
             draw_physobject(assets, ctx, p, coords)?;
 
-            for b in &self.balls {
+            for b in &self.game.balls {
                 draw_physobject(assets, ctx, b, coords)?;
             }
         }
@@ -525,8 +539,8 @@ impl EventHandler for MainState {
         let score1_dest = Point2::new(10.0, 10.0);
         let score2_dest = Point2::new(250.0, 10.0);
 
-        let score1_str = format!("X Velocity: {}", self.player1.x_velocity);
-        let score2_str = format!("Y Velocity: {}", self.player1.y_velocity);
+        let score1_str = format!("X Velocity: {}", self.game.player1.x_velocity);
+        let score2_str = format!("Y Velocity: {}", self.game.player1.y_velocity);
 
         let score1_display = graphics::Text::new((score1_str, self.assets.font, 32.0));
         let score2_display = graphics::Text::new((score2_str, self.assets.font, 32.0));
@@ -559,21 +573,21 @@ impl EventHandler for MainState {
     ) {
         match keycode {
             KeyCode::W => {
-                self.input.yaxis1pos = 1.0;
+                self.game.input1.yaxis1pos = 1.0;
             }
             KeyCode::S => {
-                self.input.yaxis1neg = -1.0;
+                self.game.input1.yaxis1neg = -1.0;
             }
             KeyCode::D => {
-                self.input.xaxis1pos = 1.0;
+                self.game.input1.xaxis1pos = 1.0;
             }
             KeyCode::A => {
-                self.input.xaxis1neg = -1.0;
+                self.game.input1.xaxis1neg = -1.0;
             }
             KeyCode::Space => {
                 let coll_balls = self.collision_check();
-                if self.player1.hold == 0.0 && !coll_balls.0.is_empty() {
-                    self.player1.hold = coll_balls.0[0];
+                if self.game.player1.hold == 0.0 && !coll_balls.0.is_empty() {
+                    self.game.player1.hold = coll_balls.0[0];
                 }
             }
             KeyCode::P => {
@@ -589,27 +603,27 @@ impl EventHandler for MainState {
     fn key_up_event(&mut self, _ctx: &mut Context, keycode: KeyCode, _keymod: KeyMods) {
         match keycode {
             KeyCode::W => {
-                self.input.yaxis1pos = 0.0;
+                self.game.input1.yaxis1pos = 0.0;
             }
             KeyCode::S => {
-                self.input.yaxis1neg = 0.0;
+                self.game.input1.yaxis1neg = 0.0;
             }
             KeyCode::D => {
-                self.input.xaxis1pos = 0.0;
+                self.game.input1.xaxis1pos = 0.0;
             }
             KeyCode::A => {
-                self.input.xaxis1neg = 0.0;
+                self.game.input1.xaxis1neg = 0.0;
             }
             KeyCode::Space => {
-                let id = ball_id_to_elem(&self.balls, self.player1.hold);
+                let id = ball_id_to_elem(&self.game.balls, self.game.player1.hold);
                 if id.is_some() {
                     match id {
-                        Some(x) => {self.balls[x].x_velocity = self.player1.x_velocity;
-                            self.balls[x].y_velocity = self.player1.y_velocity;}
+                        Some(x) => {self.game.balls[x].x_velocity = self.game.player1.x_velocity;
+                            self.game.balls[x].y_velocity = self.game.player1.y_velocity;}
                         _ => ()
                     }
                 }
-                self.player1.hold = 0.0;
+                self.game.player1.hold = 0.0;
             }
             _ => (), // Do nothing
         }
@@ -618,21 +632,27 @@ impl EventHandler for MainState {
 
 //AI-scripting functions
 
-fn test_plugin(a: i32, b: i32, name: &str) -> i32 {
+fn test_plugin(a: isize, b: isize, name: &str) -> isize {
+    if Library::new(name.replace("rs","dll")).is_err() {
+        eprintln!("Error during add test: {:?}", Library::new(name.replace("rs","dll")).err());
+        panic!();
+    }
+
     let lib = Library::new(name.replace("rs","dll")).unwrap();
     unsafe {
-        let func: Symbol<TestFunc> = lib.get(b"calculate_move").unwrap();
+        let func: Symbol<AddFunc> = lib.get(b"add").unwrap();
         let answer = func(a, b);
         answer
+        
     }
+    
 }
 
-fn ai_generate_input(state: &mut MainState, name: &str) -> &mut InputState {
+fn ai_generate_input(state: &mut GameState, name: &str) -> InputState {
     let lib = Library::new(name.replace("rs","dll")).unwrap();
     unsafe {
         let func: Symbol<AIFunc> = lib.get(b"calculate_move").unwrap();
-        let input = func(state);
-        input
+        func(state)
     }
 }
 
@@ -652,7 +672,7 @@ pub fn main() -> GameResult {
     let paths = fs::read_dir("src/script/").unwrap();
 
     //Name of selected script with functioning test function
-    let maybe_name: Option<String> = None;
+    let mut maybe_name: Option<String> = None;
     println!("Reading files from script folder:");
 
     //Iterate over paths
@@ -681,8 +701,14 @@ pub fn main() -> GameResult {
         println!("FileName: {}", path.file_name().unwrap().to_str().unwrap());
         println!("Name: {}", path.display());
 
+        println!("Test upcoming:");
+
         //Tests the code, 1 + 3 = 4. Mostly to check connectivity
-        println!("{}+{}:{}",1,3,test_plugin(1,3, path.file_name().unwrap().to_str().unwrap()));
+        let temp = path.file_name().unwrap().to_str().unwrap();
+        println!("wee");
+        println!("{}+{}:{}",1,3,test_plugin(1,3, temp));
+
+        println!("Test finished:");
 
         //If it has not panicked by now, store the script file name
         maybe_name = Some(path.file_name().unwrap().to_os_string().into_string().unwrap());
@@ -707,6 +733,12 @@ pub fn main() -> GameResult {
 
     let (ctx, events_loop) = &mut cb.build()?;
 
-    let game = &mut MainState::new(ctx)?;
+    
+    if maybe_name.is_none() {
+        eprintln!("No script"); 
+        panic!("NO SCRIPT LOADED")
+    }
+
+    let game = &mut MainState::new(ctx, maybe_name.unwrap())?;
     event::run(ctx, events_loop, game)
 }
