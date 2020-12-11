@@ -17,6 +17,19 @@ use rand;
 use std::env;
 use std::path;
 
+use std::fs::File;
+use std::io::prelude::*;
+use std::process::Command;
+use libloading::{Library, Symbol};
+use std::fs::{self};
+use std::path::Path;
+
+pub mod structs;
+pub use structs::*;
+
+type TestFunc = unsafe fn(i32, i32) -> i32;
+type AIFunc = unsafe fn(&MainState) -> &InputState;
+
 type Point2 = na::Point2<f32>;
 type Vector2 = na::Vector2<f32>;
 
@@ -495,12 +508,80 @@ impl EventHandler for MainState {
     }
 }
 
+//AI-scripting functions
+
+fn test_plugin(a: i32, b: i32, name: &str) -> i32 {
+    let lib = Library::new(name.replace("rs","dll")).unwrap();
+    unsafe {
+        let func: Symbol<TestFunc> = lib.get(b"calculate_move").unwrap();
+        let answer = func(a, b);
+        answer
+    }
+}
+
+fn ai_generate_input(state: &mut MainState, name: &str) -> &mut InputState {
+    let lib = Library::new(name.replace("rs","dll")).unwrap();
+    unsafe {
+        let func: Symbol<AIFunc> = lib.get(b"calculate_move").unwrap();
+        let input = func(state);
+        input
+    }
+}
+
+fn compile_file(path: &Path) {
+    let mut compile_file = Command::new("cmd");
+    compile_file.args(&["/C", "rustc", "--crate-type", "cdylib", path.as_os_str().to_str().unwrap()]).status().expect("process failed to execute");
+}
+
 /// **********************************************************************
 /// Finally our main function!  Which merely sets up a config and calls
 /// `ggez::event::run()` with our `EventHandler` type.
 /// **********************************************************************
 
 pub fn main() -> GameResult {
+
+    //AI script loading
+    let paths = fs::read_dir("src/script/").unwrap();
+
+    //Name of selected script with functioning test function
+    let maybe_name: Option<String> = None;
+    println!("Reading files from script folder:");
+
+    //Iterate over paths
+    for path_prewrap in paths {
+        let path = path_prewrap.unwrap().path();
+
+        println!("PreFilter: {}", path.file_name().unwrap().to_str().unwrap());
+
+        //Has to be
+        //* Not directory
+        //* Not the structs-file
+        //* Extension is .rs
+        if path.is_dir() {
+            continue
+        }
+        if path.file_name().unwrap() == "structs.rs" {
+            continue
+        }
+        if path.extension().unwrap() != "rs" {
+            continue
+        }
+
+        //All pre-requirements met
+        //Compile and test the script
+        compile_file(path.as_path());
+        println!("FileName: {}", path.file_name().unwrap().to_str().unwrap());
+        println!("Name: {}", path.display());
+
+        //Tests the code, 1 + 3 = 4. Mostly to check connectivity
+        println!("{}+{}:{}",1,3,test_plugin(1,3, path.file_name().unwrap().to_str().unwrap()));
+
+        //If it has not panicked by now, store the script file name
+        maybe_name = Some(path.file_name().unwrap().to_os_string().into_string().unwrap());
+    }
+
+
+
     // We add the CARGO_MANIFEST_DIR/resources to the resource paths
     // so that ggez will look in our cargo project directory for files.
     let resource_dir = if let Ok(manifest_dir) = env::var("CARGO_MANIFEST_DIR") {
