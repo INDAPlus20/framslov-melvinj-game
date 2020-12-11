@@ -9,4 +9,3 @@ edition = "2018"
 [dependencies]
 ggez = "0.5"
 rand = "0.7"
-libloading = "0.6.6"
