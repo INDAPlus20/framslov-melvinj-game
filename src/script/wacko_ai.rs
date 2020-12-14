@@ -1,3 +1,9 @@
+/// **********************************************************************
+/// Note: Scripts should only affect one player each
+/// Only change either '1' or '2' values to avoid cheating
+/// AIs may access the position and velocities of all PhysObjects in the game
+/// **********************************************************************
+
 pub mod structs;
 pub use structs::*;
 fn main() {
@@ -17,5 +23,5 @@ fn main() {
             yaxis2pos: 0.0,
             yaxis2neg: 0.0,
         }
-	}
+    }
 }

@@ -109,12 +109,12 @@ const SHOT_BBOX: f32 = 6.0;
 /// Now we have some constructor functions for different game objects.
 /// **********************************************************************
 
-fn create_player() -> PhysObject {
+fn create_player(spawn_pos: (f32, f32), player_id: f32) -> PhysObject {
     PhysObject {
         tag: PhysType::Player,
-        id: 1.0,
+        id: player_id,
         hold: 0.0,
-        pos: (0.0,0.0),//Origin
+        pos: spawn_pos,
         x_velocity: 0.0,
         y_velocity: 0.0,
         bbox_size: PLAYER_BBOX
@@ -216,7 +216,7 @@ fn pickup_ball(player: &mut PhysObject, ball: &PhysObject) {
 
     // TODO Update position
 
-fn update_object_position(object: &mut PhysObject, width: f32, height: f32, dt: f32) {
+fn update_object_position(object: &mut PhysObject, width_lower: f32, width_upper: f32, height: f32, dt: f32) {
     // Clamp the velocity to the max *efficiently*
 
     let drag_factor = 0.998; //How much of velocity is kept between updates
@@ -238,12 +238,12 @@ fn update_object_position(object: &mut PhysObject, width: f32, height: f32, dt: 
     let dxv = object.x_velocity * dt;
     let dyv = object.y_velocity * dt;
 
-    if object.pos.0 + dxv < -width / 2.0 {
-        object.pos.0 = -width - (object.pos.0 + dxv);
+    if object.pos.0 + dxv < width_lower {
+        object.pos.0 = 2.0 * width_lower - (object.pos.0 + dxv);
         object.x_velocity *= -1.0;
     }
-    else if object.pos.0 + dxv > width / 2.0 {
-        object.pos.0 = width - (object.pos.0 + dxv);
+    else if object.pos.0 + dxv > width_upper {
+        object.pos.0 = 2.0 * width_upper - (object.pos.0 + dxv);
         object.x_velocity *= -1.0;
     }
     else {
@@ -260,25 +260,6 @@ fn update_object_position(object: &mut PhysObject, width: f32, height: f32, dt: 
     }
     else {
         object.pos.1 += dyv;
-    }
-}
-
-/// Takes an actor and wraps its position to the bounds of the
-/// screen, so if it goes off the left side of the screen it
-/// will re-enter on the right side and so on.
-fn wrap_actor_position(object: &mut PhysObject, sx: f32, sy: f32) {
-    // Wrap screen
-    let screen_x_bounds = sx / 2.0;
-    let screen_y_bounds = sy / 2.0;
-    if object.pos.0 > screen_x_bounds {
-        object.pos.0 -= sx;
-    } else if object.pos.0 < -screen_x_bounds {
-        object.pos.0 += sx;
-    };
-    if object.pos.1 > screen_y_bounds {
-        object.pos.1 -= sy;
-    } else if object.pos.1 < -screen_y_bounds {
-        object.pos.1 += sy;
     }
 }
 
@@ -406,8 +387,8 @@ impl MainState {
         let (width, height) = graphics::drawable_size(ctx);
 
         let assets = Assets::new(ctx)?;
-        let player1 = create_player();
-        let player2 = create_player();
+        let player1 = create_player((-3.0 * width / 8.0, 0.0), 1.0);
+        let player2 = create_player((3.0 * width / 8.0, 0.0), 2.0);
         let balls = create_balls(6.0, (width, height));
         let g = GameState {
             player1,
@@ -517,15 +498,12 @@ impl EventHandler for MainState {
             }*/
 
             // Update the physics for all actors.
-            // First the player...
-            update_object_position(&mut self.game.player1, self.game.screen_width as f32, self.game.screen_height as f32, seconds);
-            wrap_actor_position(&mut self.game.player1, self.game.screen_width as f32, self.game.screen_height as f32);
-
+            // First the players...
+            update_object_position(&mut self.game.player1, -self.game.screen_width as f32 / 2.0, 0.0, self.game.screen_height as f32, seconds);
+            update_object_position(&mut self.game.player2, 0.0, self.game.screen_width as f32 / 2.0, self.game.screen_height as f32, seconds);
             // Then the balls...
             for object in &mut self.game.balls {
-                update_object_position(object, self.game.screen_width as f32, self.game.screen_height as f32, seconds);
-                //wrap_actor_position(object, self.screen_width as f32, self.screen_height as f32);
-                //handle_timed_life(object, seconds);
+                update_object_position(object, -self.game.screen_width as f32 / 2.0, self.game.screen_width as f32 / 2.0, self.game.screen_height as f32, seconds);
             }
 
             ball_follow(&self.game.player1, &mut self.game.balls);
@@ -561,8 +539,10 @@ impl EventHandler for MainState {
             let assets = &mut self.assets;
             let coords = (self.game.screen_width, self.game.screen_height);
 
-            let p = &self.game.player1;
-            draw_physobject(assets, ctx, p, coords)?;
+            let p1 = &self.game.player1;
+            draw_physobject(assets, ctx, p1, coords)?;
+            let p2 = &self.game.player2;
+            draw_physobject(assets, ctx, p2, coords)?;
 
             for b in &self.game.balls {
                 draw_physobject(assets, ctx, b, coords)?;
@@ -761,23 +741,24 @@ impl EventHandler for MainState {
 //AI-scripting functions
 
 fn test_plugin(a: isize, b: isize, name: &str) -> isize {
-    if Library::new(name.replace("rs","dll")).is_err() {
-        eprintln!("Error during add test: {:?}", Library::new(name.replace("rs","dll")).err());
+    if Library::new(name).is_err() {
+        eprintln!("Error during add test: {:?}", Library::new(name).err());
         panic!();
     }
 
-    let lib = Library::new(name.replace("rs","dll")).unwrap();
+    let lib = Library::new(name).unwrap();
     unsafe {
         let func: Symbol<AddFunc> = lib.get(b"add").unwrap();
         let answer = func(a, b);
         answer
         
     }
-    
 }
 
+
 fn ai_generate_input(state: &GameState, name: &str) -> InputState {
-    let lib = Library::new(name.replace("rs","dll")).unwrap();
+    let lib = Library::new(name).unwrap();
+
     unsafe {
         let func: Symbol<AIFunc> = lib.get(b"calculate_move").unwrap();
         func(state)
@@ -785,13 +766,13 @@ fn ai_generate_input(state: &GameState, name: &str) -> InputState {
 }
 
 fn compile_file(path: &Path) {
-    let mut compile_file = Command::new("cmd");
-    compile_file.args(&["/C", "rustc", "--crate-type", "cdylib", path.as_os_str().to_str().unwrap()]).status().expect("process failed to execute");
+    let mut compile_file = Command::new("rustc");
+    compile_file.args(&["--crate-type", "cdylib", path.as_os_str().to_str().unwrap()]).status().expect("process failed to execute");
 }
 
 /// **********************************************************************
 /// Finally our main function!  Which merely sets up a config and calls
-/// `ggez::event::run()` with our `EventHandler` type.
+/// `ggez::event::run()` with our `EventHandler` type. (Yeah right...)
 /// **********************************************************************
 
 pub fn main() -> GameResult {
@@ -834,9 +815,21 @@ pub fn main() -> GameResult {
         println!("Test upcoming:");
 
         //Tests the code, 1 + 3 = 4. Mostly to check connectivity
-        let temp = path.file_name().unwrap().to_str().unwrap();
+
+        let full_path;
+        if cfg!(windows) {
+            full_path = format!("{}/{}", env::current_dir().unwrap().to_string_lossy(), path.file_name().unwrap().to_str().unwrap().replace("rs","dll"));
+        }
+        else if cfg!(unix) {
+            full_path = format!("{}/lib{}", env::current_dir().unwrap().to_string_lossy(), path.file_name().unwrap().to_str().unwrap().replace("rs","so"));
+        }
+        else {
+            eprintln!("What the fuck?!");
+            panic!();
+        }
         println!("wee");
-        let answer = test_plugin(1,3, temp);
+      
+        let answer = test_plugin(1,3, full_path.as_str());
         println!("{}+{}:{}",1,3,answer);
 
         if answer != 4 {
@@ -847,9 +840,8 @@ pub fn main() -> GameResult {
         println!("Test finished:");
 
         //If it has not panicked by now, store the script file name
-
-        valid_scripts.push(path.file_name().unwrap().to_os_string().into_string().unwrap());
-        //maybe_name = Some(path.file_name().unwrap().to_os_string().into_string().unwrap());
+        valid_scripts.push(full_path);
+        //maybe_name = Some(full_path);
     }
 
 
