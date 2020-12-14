@@ -359,7 +359,8 @@ impl Default for InputState {
 struct MainState {
     game: GameState,
     assets: Assets,
-    scriptname: String,
+    source_player1: Option<String>,
+    source_player2: Option<String>,
 }
 
 struct GameState {
@@ -400,7 +401,8 @@ impl MainState {
         let s = MainState {
             game: g,
             assets: assets,
-            scriptname: name,
+            source_player1: None,
+            source_player2: Some(name),
         };
 
         Ok(s)
@@ -472,9 +474,18 @@ impl EventHandler for MainState {
             let seconds = 1.0 / (DESIRED_FPS as f32);
 
             // Update the player state based on the user input.
-            let scriptname = &(&(self.scriptname)).clone();
-            println!("Attempting to generate input");
-            self.game.input2 = ai_generate_input(&(self.game), scriptname);
+            match self.source_player1.as_ref() {
+                Some(scriptname1) => {
+                    self.game.input1 = ai_generate_input(&(self.game), &scriptname1);
+                },
+                None => ()
+            }
+            match self.source_player2.as_ref() {
+                Some(scriptname2) => {
+                    self.game.input2 = ai_generate_input(&(self.game), &scriptname2);
+                },
+                None => ()
+            }
             player_handle_input(&mut self.game.player1, &self.game.input1);
             player_handle_input(&mut self.game.player2, &self.game.input2);
             
@@ -573,35 +584,125 @@ impl EventHandler for MainState {
         _repeat: bool,
     ) {
         match keycode {
-            KeyCode::W => {
-                self.game.input1.yaxis1pos = 1.0;
-            }
-            KeyCode::S => {
-                self.game.input1.yaxis1neg = -1.0;
-            }
-            KeyCode::D => {
-                self.game.input1.xaxis1pos = 1.0;
-            }
-            KeyCode::A => {
-                self.game.input1.xaxis1neg = -1.0;
-            }
-            KeyCode::Space => {
-                let coll_balls = self.collision_check();
-                if self.game.player1.hold == 0.0 && !coll_balls.0.is_empty() {
-                    self.game.player1.hold = coll_balls.0[0];
-                }
-            }
             KeyCode::P => {
                 let img = graphics::screenshot(ctx).expect("Could not take screenshot");
                 img.encode(ctx, graphics::ImageFormat::Png, "/screenshot.png")
-                    .expect("Could not save screenshot");
+                .expect("Could not save screenshot");
             }
             KeyCode::Escape => event::quit(ctx),
             _ => (), // Do nothing
         }
+        if self.source_player1.is_none() {
+            match keycode {
+                KeyCode::W => {
+                    self.game.input1.yaxis1pos = 1.0;
+                }
+                KeyCode::S => {
+                    self.game.input1.yaxis1neg = -1.0;
+                }
+                KeyCode::D => {
+                    self.game.input1.xaxis1pos = 1.0;
+                }
+                KeyCode::A => {
+                    self.game.input1.xaxis1neg = -1.0;
+                }
+                KeyCode::Space => {
+                    let coll_balls = self.collision_check();
+                    if self.game.player1.hold == 0.0 && !coll_balls.0.is_empty() {
+                        self.game.player1.hold = coll_balls.0[0];
+                    }
+                }
+                _ => (), // Do nothing
+            }
+        }
+        if self.source_player2.is_none() {
+            match keycode {
+                KeyCode::Up => {
+                    self.game.input2.yaxis1pos = 1.0;
+                }
+                KeyCode::Down => {
+                    self.game.input2.yaxis1neg = -1.0;
+                }
+                KeyCode::Right => {
+                    self.game.input2.xaxis1pos = 1.0;
+                }
+                KeyCode::Left => {
+                    self.game.input2.xaxis1neg = -1.0;
+                }
+                KeyCode::Return => {
+                    let coll_balls = self.collision_check();
+                    if self.game.player2.hold == 0.0 && !coll_balls.1.is_empty() {
+                        self.game.player2.hold = coll_balls.1[0];
+                    }
+                }
+                _ => (), // Do nothing
+            }
+        }
     }
 
     fn key_up_event(&mut self, _ctx: &mut Context, keycode: KeyCode, _keymod: KeyMods) {
+        if self.source_player1.is_none() {
+            match keycode {
+                KeyCode::W => {
+                    self.game.input1.yaxis1pos = 0.0;
+                }
+                KeyCode::S => {
+                    self.game.input1.yaxis1neg = 0.0;
+                }
+                KeyCode::D => {
+                    self.game.input1.xaxis1pos = 0.0;
+                }
+                KeyCode::A => {
+                    self.game.input1.xaxis1neg = 0.0;
+                }
+                KeyCode::Space => {
+                    let id = ball_id_to_elem(&self.game.balls, self.game.player1.hold);
+                    if id.is_some() {
+                        match id {
+                            Some(x) => {
+                                self.game.balls[x].x_velocity = self.game.player1.x_velocity;
+                                self.game.balls[x].y_velocity = self.game.player1.y_velocity;
+                            },
+                            _ => ()
+                        }
+                    }
+                    self.game.player1.hold = 0.0;
+                }
+                _ => (), // Do nothing
+            }
+        }
+        if self.source_player2.is_none() {
+            match keycode {
+                KeyCode::Up => {
+                    self.game.input2.yaxis1pos = 0.0;
+                }
+                KeyCode::Down => {
+                    self.game.input2.yaxis1neg = 0.0;
+                }
+                KeyCode::Right => {
+                    self.game.input2.xaxis1pos = 0.0;
+                }
+                KeyCode::Left => {
+                    self.game.input2.xaxis1neg = 0.0;
+                }
+                KeyCode::Return => {
+                    let id = ball_id_to_elem(&self.game.balls, self.game.player2.hold);
+                    if id.is_some() {
+                        match id {
+                            Some(x) => {
+                                self.game.balls[x].x_velocity = self.game.player2.x_velocity;
+                                self.game.balls[x].y_velocity = self.game.player2.y_velocity;
+                            },
+                            _ => ()
+                        }
+                    }
+                    self.game.player2.hold = 0.0;
+                }
+                _ => (), // Do nothing
+            }
+        }
+
+/*
         match keycode {
             KeyCode::W => {
                 self.game.input1.yaxis1pos = 0.0;
@@ -627,7 +728,7 @@ impl EventHandler for MainState {
                 self.game.player1.hold = 0.0;
             }
             _ => (), // Do nothing
-        }
+        }*/
     }
 }
 
