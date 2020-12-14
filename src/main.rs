@@ -376,7 +376,7 @@ struct GameState {
 }
 
 impl MainState {
-    fn new(ctx: &mut Context, name: String) -> GameResult<MainState> {
+    fn new(ctx: &mut Context, source_player1: Option<String>, source_player2: Option<String>) -> GameResult<MainState> {
         println!("Game resource path: {:?}", ctx.filesystem);
 
         print_instructions();
@@ -401,8 +401,8 @@ impl MainState {
         let s = MainState {
             game: g,
             assets: assets,
-            source_player1: None,
-            source_player2: Some(name),
+            source_player1: source_player1,
+            source_player2: source_player2,
         };
 
         Ok(s)
@@ -769,7 +769,7 @@ fn compile_file(path: &Path) {
 /// **********************************************************************
 
 pub fn main() -> GameResult {
-
+    let args: Vec<String> = env::args().collect();
     //AI script loading
     let paths = fs::read_dir("src/script/").unwrap();
 
@@ -778,6 +778,8 @@ pub fn main() -> GameResult {
     println!("Reading files from script folder:");
 
     //Iterate over paths
+    let mut valid_scripts: Vec<String> = Vec::new();
+
     for path_prewrap in paths {
         let path = path_prewrap.unwrap().path();
 
@@ -808,13 +810,23 @@ pub fn main() -> GameResult {
         //Tests the code, 1 + 3 = 4. Mostly to check connectivity
         let temp = path.file_name().unwrap().to_str().unwrap();
         println!("wee");
-        println!("{}+{}:{}",1,3,test_plugin(1,3, temp));
+        let answer = test_plugin(1,3, temp);
+        println!("{}+{}:{}",1,3,answer);
+
+        if answer != 4 {
+            continue
+            //Not correct, script disqualified
+        }
 
         println!("Test finished:");
 
         //If it has not panicked by now, store the script file name
-        maybe_name = Some(path.file_name().unwrap().to_os_string().into_string().unwrap());
+
+        valid_scripts.push(path.file_name().unwrap().to_os_string().into_string().unwrap());
+        //maybe_name = Some(path.file_name().unwrap().to_os_string().into_string().unwrap());
     }
+
+
 
 
 
@@ -835,12 +847,40 @@ pub fn main() -> GameResult {
 
     let (ctx, events_loop) = &mut cb.build()?;
 
+    let mut player1: Option<String> = None;
+    let mut player2: Option<String> = None;
+
     
-    if maybe_name.is_none() {
-        eprintln!("No script"); 
-        panic!("NO SCRIPT LOADED")
+    for valid in valid_scripts {
+        println!("currently checking: {} against {} and {}", valid, args.get(1).unwrap(), args.get(2).unwrap());
+        match args.get(1) {
+            Some(arg) => {
+                if valid.contains(arg) {
+                    player1 = Some(valid.clone());
+                }
+            },
+            None => ()
+        }
+        match args.get(2) {
+            Some(arg) => {
+                if valid.contains(arg) {
+                    player2 = Some(valid.clone());
+                }
+            },
+            None => ()
+        }
+    }
+    
+
+    match player1.clone() {
+        Some(name) => println!("Script {} loaded for P1", name),
+        None => println!("No script loaded for P1"),
+    }
+    match player2.clone() {
+        Some(name) => println!("Script {} loaded for P2", name),
+        None => println!("No script loaded for P2"),
     }
 
-    let game = &mut MainState::new(ctx, maybe_name.unwrap())?;
+    let game = &mut MainState::new(ctx, player1, player2)?;
     event::run(ctx, events_loop, game)
 }
