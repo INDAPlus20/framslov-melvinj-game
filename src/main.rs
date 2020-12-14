@@ -202,10 +202,32 @@ fn player_handle_input(object: &mut PhysObject, input: &InputState) {
     object.y_velocity += PLAYER_SPEED * (input.yaxis1pos + input.yaxis1neg);
 }
 
+fn pickup_ball(player: &mut PhysObject, ball: &PhysObject) {
+    if player.hold != 0.0 {
+        return //already holding
+    }
+    let max_pickup_vel = 10.0;
+    if ((ball.x_velocity)*(ball.x_velocity) + (ball.y_velocity)*(ball.y_velocity)).sqrt() < max_pickup_vel {
+        player.hold = ball.id;
+        //Successful pickup!
+    }
+    // Too fast...
+}
+
     // TODO Update position
 
 fn update_object_position(object: &mut PhysObject, width: f32, height: f32, dt: f32) {
     // Clamp the velocity to the max *efficiently*
+
+    let drag_factor = 0.998; //How much of velocity is kept between updates
+    match &object.tag {
+        PhysType::Ball => {
+            object.x_velocity *= drag_factor;
+            object.y_velocity *= drag_factor;
+        },
+        _ => ()
+    }
+
     if object.x_velocity.abs() > MAX_PHYSICS_VEL {
         object.x_velocity = object.x_velocity.signum() * MAX_PHYSICS_VEL;
     }
@@ -608,8 +630,10 @@ impl EventHandler for MainState {
                 }
                 KeyCode::Space => {
                     let coll_balls = self.collision_check();
-                    if self.game.player1.hold == 0.0 && !coll_balls.0.is_empty() {
-                        self.game.player1.hold = coll_balls.0[0];
+                    if !coll_balls.0.is_empty() {
+                        //How to get ball as PhysObject from id:
+                        let ball = &self.game.balls[ball_id_to_elem(&self.game.balls, coll_balls.0[0]).unwrap()];
+                        pickup_ball(&mut self.game.player1, ball);
                     }
                 }
                 _ => (), // Do nothing
@@ -631,8 +655,10 @@ impl EventHandler for MainState {
                 }
                 KeyCode::Return => {
                     let coll_balls = self.collision_check();
-                    if self.game.player2.hold == 0.0 && !coll_balls.1.is_empty() {
-                        self.game.player2.hold = coll_balls.1[0];
+                    if !coll_balls.1.is_empty() {
+                        //How to get ball as PhysObject from id:
+                        let ball = &self.game.balls[ball_id_to_elem(&self.game.balls, coll_balls.1[0]).unwrap()];
+                        pickup_ball(&mut self.game.player2, ball);
                     }
                 }
                 _ => (), // Do nothing
