@@ -474,8 +474,9 @@ impl EventHandler for MainState {
             // Update the player state based on the user input.
             let scriptname = &(&(self.scriptname)).clone();
             println!("Attempting to generate input");
-            self.game.input2 = ai_generate_input(&mut self.game, scriptname);
+            self.game.input2 = ai_generate_input(&(self.game), scriptname);
             player_handle_input(&mut self.game.player1, &self.game.input1);
+            player_handle_input(&mut self.game.player2, &self.game.input2);
             
             /*self.player_shot_timeout -= seconds;
             if self.input.fire && self.player_shot_timeout < 0.0 {
@@ -648,7 +649,7 @@ fn test_plugin(a: isize, b: isize, name: &str) -> isize {
     
 }
 
-fn ai_generate_input(state: &mut GameState, name: &str) -> InputState {
+fn ai_generate_input(state: &GameState, name: &str) -> InputState {
     let lib = Library::new(name.replace("rs","dll")).unwrap();
     unsafe {
         let func: Symbol<AIFunc> = lib.get(b"calculate_move").unwrap();
