@@ -5,21 +5,20 @@
 
 use ggez;
 use ggez::audio;
-use ggez::audio::SoundSource;
+// use ggez::audio::SoundSource;
 use ggez::conf;
 use ggez::event::{self, EventHandler, KeyCode, KeyMods};
 use ggez::graphics;
 use ggez::nalgebra as na;
 use ggez::timer;
 use ggez::{Context, ContextBuilder, GameResult};
-use rand;
 
 use std::env;
 use std::path;
 use std::cell::Cell;
 
-use std::fs::File;
-use std::io::prelude::*;
+// use std::fs::File;
+// use std::io::prelude::*;
 use std::process::Command;
 use libloading::{Library, Symbol};
 use std::fs::{self};
@@ -29,28 +28,6 @@ type AddFunc = unsafe fn(isize, isize) -> isize;
 type AIFunc = unsafe fn(&GameState) -> InputState;
 
 type Point2 = na::Point2<f32>;
-type Vector2 = na::Vector2<f32>;
-
-/// *********************************************************************
-/// Basic stuff, make some helpers for vector functions.
-/// We use the nalgebra math library to provide lots of
-/// math stuff.  This just adds some helpers.
-/// **********************************************************************
-
-/// Create a unit vector representing the
-/// given angle (in radians)
-fn vec_from_angle(angle: f32) -> Vector2 {
-    let vx = angle.sin();
-    let vy = angle.cos();
-    Vector2::new(vx, vy)
-}
-
-/// Makes a random `Vector2` with the given max magnitude.
-fn random_vec(max_magnitude: f32) -> Vector2 {
-    let angle = rand::random::<f32>() * 2.0 * std::f32::consts::PI;
-    let mag = rand::random::<f32>() * max_magnitude;
-    vec_from_angle(angle) * (mag)
-}
 
 /// *********************************************************************
 /// Now we define our Actors.
@@ -103,7 +80,6 @@ impl PhysObject {
 
 const PLAYER_BBOX: f32 = 12.0;
 const ROCK_BBOX: f32 = 12.0;
-const SHOT_BBOX: f32 = 6.0;
 
 /// *********************************************************************
 /// Now we have some constructor functions for different game objects.
@@ -121,29 +97,28 @@ fn create_player(spawn_pos: (f32, f32), player_id: f32) -> PhysObject {
     }
 }
 
-fn create_balls(balls_num: f32, size: (f32, f32)) -> Vec<PhysObject> {
+fn create_balls(balls_num: f32) -> Vec<PhysObject> {
     let mut balls = Vec::new();
     let distance = 100.0;
-    balls.append(&mut create_balls_collumn((balls_num / 2.0).ceil(), distance, size));
-    balls.append(&mut create_balls_collumn((balls_num / 2.0).floor(), distance + 50.0, size));
+    balls.append(&mut create_balls_collumn((balls_num / 2.0).ceil(), distance));
+    balls.append(&mut create_balls_collumn((balls_num / 2.0).floor(), distance + 50.0));
 
     return balls;
 }
 
-fn create_balls_collumn(balls_num: f32, distance: f32, size: (f32, f32)) -> Vec<PhysObject> {
+fn create_balls_collumn(balls_num: f32, distance: f32) -> Vec<PhysObject> {
     let space = 50.0;
     let mut space_iter = -((balls_num - 1.0) * 50.0) / 2.0;
     let mut balls = Vec::new();
     for _ in 0..balls_num as i32 {
-        balls.append(&mut create_ball_pair(distance, space_iter, size));
+        balls.append(&mut create_ball_pair(distance, space_iter));
         space_iter += space;
     }
 
     return balls;
 }
 
-fn create_ball_pair(x: f32, y: f32, size: (f32, f32)) -> Vec<PhysObject> {
-    let (width, height) = size;
+fn create_ball_pair(x: f32, y: f32) -> Vec<PhysObject> {
     let mut balls = Vec::new();
     balls.push(PhysObject::new_ball_id((-x, y)));
     balls.push(PhysObject::new_ball_id((x, y)));
@@ -181,28 +156,31 @@ fn ball_follow(player: &PhysObject, balls: &mut Vec<PhysObject>) {
 /// the coordinate system so that +y is up and -y is down.
 /// **********************************************************************
 
-/// How fast shots move.
-const SHOT_SPEED: f32 = 200.0;
-/// Angular velocity of how fast shots rotate.
-const SHOT_ANG_VEL: f32 = 0.1;
-
-/// Acceleration in pixels per second.
-const PLAYER_THRUST: f32 = 100.0;
-/// Rotation in radians per second.
-const PLAYER_SPEED: f32 = 8.0;
-/// Refire delay between shots, in seconds.
-const PLAYER_SHOT_TIME: f32 = 0.5;
+/// Acceleration in pixels per second squared.
+const PLAYER_ACCELERATION: f32 = 8.0;
 /// Max velocity in pixels per second
 const MAX_PHYSICS_VEL: f32 = 200.0;
-
-    // TODO 2D input based on player ID
+/// Deacceleration in pixels per second squared.
+const BALL_DRAG: f32 = 20.0;
 
 fn player_handle_input(object: &mut PhysObject, input: &InputState) {
-    object.x_velocity += PLAYER_SPEED * (input.xaxis1pos + input.xaxis1neg);
-    object.y_velocity += PLAYER_SPEED * (input.yaxis1pos + input.yaxis1neg);
+    object.x_velocity += PLAYER_ACCELERATION * (input.xaxis1pos + input.xaxis1neg);
+    object.y_velocity += PLAYER_ACCELERATION * (input.yaxis1pos + input.yaxis1neg);
 }
 
-    // TODO Update position
+fn ball_halt(ball: &mut PhysObject, dt: f32) {
+    if ball.x_velocity.abs().floor() != 0.0 || ball.y_velocity.abs().floor() != 0.0 {
+        print!("{}", ball.x_velocity);
+        let pythagoras = (ball.x_velocity.powf(2.0) + ball.y_velocity.powf(2.0)).powf(0.5);
+        ball.x_velocity -= BALL_DRAG * ball.x_velocity.signum() * dt * ball.x_velocity.abs() / pythagoras;
+        ball.y_velocity -= BALL_DRAG * ball.y_velocity.signum() * dt * ball.y_velocity.abs() / pythagoras;
+    }
+    else {
+        ball.x_velocity = 0.0;
+        ball.y_velocity = 0.0;
+        ball.hold = 0.0;
+    }
+}
 
 fn update_object_position(object: &mut PhysObject, width_lower: f32, width_upper: f32, height: f32, dt: f32) {
     // Clamp the velocity to the max *efficiently*
@@ -263,7 +241,8 @@ fn world_to_screen_coords(screen_width: f32, screen_height: f32, point: Point2) 
 struct Assets {
     player_image: graphics::Image,
     shot_image: graphics::Image,
-    rock_image: graphics::Image,
+    ball_image: graphics::Image,
+    ball_red_image: graphics::Image,
     font: graphics::Font,
     shot_sound: audio::Source,
     hit_sound: audio::Source,
@@ -273,7 +252,8 @@ impl Assets {
     fn new(ctx: &mut Context) -> GameResult<Assets> {
         let player_image = graphics::Image::new(ctx, "/player.png")?;
         let shot_image = graphics::Image::new(ctx, "/shot.png")?;
-        let rock_image = graphics::Image::new(ctx, "/rock.png")?;
+        let ball_image = graphics::Image::new(ctx, "/ball.png")?;
+        let ball_red_image = graphics::Image::new(ctx, "/ball_red.png")?;
         let font = graphics::Font::new(ctx, "/DejaVuSerif.ttf")?;
 
         let shot_sound = audio::Source::new(ctx, "/pew.ogg")?;
@@ -282,7 +262,8 @@ impl Assets {
         Ok(Assets {
             player_image,
             shot_image,
-            rock_image,
+            ball_image,
+            ball_red_image,
             font,
             shot_sound,
             hit_sound,
@@ -292,7 +273,12 @@ impl Assets {
     fn actor_image(&mut self, object: &PhysObject) -> &mut graphics::Image {
         match object.tag {
             PhysType::Player => &mut self.player_image,
-            PhysType::Ball => &mut self.rock_image,
+            PhysType::Ball => {
+                match object.hold {
+                    x if x == 1.0 => &mut self.ball_red_image,
+                    _ => &mut self.ball_image,
+                }
+            },
         }
     }
 }
@@ -366,7 +352,7 @@ impl MainState {
         let assets = Assets::new(ctx)?;
         let player1 = create_player((-3.0 * width / 8.0, 0.0), 1.0);
         let player2 = create_player((3.0 * width / 8.0, 0.0), 2.0);
-        let balls = create_balls(6.0, (width, height));
+        let balls = create_balls(6.0);
         let g = GameState {
             player1,
             player2,
@@ -468,8 +454,9 @@ impl EventHandler for MainState {
             update_object_position(&mut self.game.player1, -self.game.screen_width as f32 / 2.0, 0.0, self.game.screen_height as f32, seconds);
             update_object_position(&mut self.game.player2, 0.0, self.game.screen_width as f32 / 2.0, self.game.screen_height as f32, seconds);
             // Then the balls...
-            for object in &mut self.game.balls {
-                update_object_position(object, -self.game.screen_width as f32 / 2.0, self.game.screen_width as f32 / 2.0, self.game.screen_height as f32, seconds);
+            for ball in &mut self.game.balls {
+                update_object_position(ball, -self.game.screen_width as f32 / 2.0, self.game.screen_width as f32 / 2.0, self.game.screen_height as f32, seconds);
+                ball_halt(ball, seconds)
             }
 
             ball_follow(&self.game.player1, &mut self.game.balls);
@@ -598,8 +585,11 @@ impl EventHandler for MainState {
                 let id = ball_id_to_elem(&self.game.balls, self.game.player1.hold);
                 if id.is_some() {
                     match id {
-                        Some(x) => {self.game.balls[x].x_velocity = self.game.player1.x_velocity;
-                            self.game.balls[x].y_velocity = self.game.player1.y_velocity;}
+                        Some(x) => {
+                            self.game.balls[x].x_velocity = self.game.player1.x_velocity;
+                            self.game.balls[x].y_velocity = self.game.player1.y_velocity;
+                            self.game.balls[x].hold = 1.0;
+                        }
                         _ => ()
                     }
                 }
