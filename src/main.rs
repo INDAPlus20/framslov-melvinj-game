@@ -126,6 +126,13 @@ fn create_ball_pair(x: f32, y: f32) -> Vec<PhysObject> {
     return balls;
 }
 
+fn reset_field(width: f32) -> (PhysObject, PhysObject, Vec<PhysObject>) {
+    let player1 = create_player((-3.0 * width / 8.0, 0.0), 1.0);
+    let player2 = create_player((3.0 * width / 8.0, 0.0), 2.0);
+    let balls = create_balls(6.0); 
+    return (player1, player2, balls);
+}
+
 fn ball_id_to_elem(balls: &Vec<PhysObject>, id: f32) -> Option<usize> {
     for (index, ball) in balls.iter().enumerate() {
         if ball.id == id {
@@ -170,7 +177,6 @@ fn player_handle_input(object: &mut PhysObject, input: &InputState) {
 
 fn ball_halt(ball: &mut PhysObject, dt: f32) {
     if ball.x_velocity.abs().floor() != 0.0 || ball.y_velocity.abs().floor() != 0.0 {
-        print!("{}", ball.x_velocity);
         let pythagoras = (ball.x_velocity.powf(2.0) + ball.y_velocity.powf(2.0)).powf(0.5);
         ball.x_velocity -= BALL_DRAG * ball.x_velocity.signum() * dt * ball.x_velocity.abs() / pythagoras;
         ball.y_velocity -= BALL_DRAG * ball.y_velocity.signum() * dt * ball.y_velocity.abs() / pythagoras;
@@ -217,6 +223,16 @@ fn update_object_position(object: &mut PhysObject, width_lower: f32, width_upper
     else {
         object.pos.1 += dyv;
     }
+}
+
+fn collision_check_score(player: &PhysObject, balls: &Vec<PhysObject>, alligment: f32) -> bool {
+    for ball in balls {
+        let pdistance = ball.get_pos_p2() - player.get_pos_p2();
+        if pdistance.norm() < (player.bbox_size + ball.bbox_size) && ball.hold == alligment {
+            return true;
+        }
+    }
+    return false;
 }
 
 /// Translates the world coordinate system, which
@@ -350,9 +366,7 @@ impl MainState {
         let (width, height) = graphics::drawable_size(ctx);
 
         let assets = Assets::new(ctx)?;
-        let player1 = create_player((-3.0 * width / 8.0, 0.0), 1.0);
-        let player2 = create_player((3.0 * width / 8.0, 0.0), 2.0);
-        let balls = create_balls(6.0);
+        let (player1, player2, balls) = reset_field(width);
         let g = GameState {
             player1,
             player2,
@@ -469,6 +483,24 @@ impl EventHandler for MainState {
 
             self.check_for_level_respawn();
 
+            let (width, _) = graphics::drawable_size(ctx);
+            if collision_check_score(&self.game.player1, &self.game.balls, 2.0) {
+                self.game.score2 += 1;
+                let (fresh_player1, fresh_player2, fresh_balls) = reset_field(width);
+                self.game.player1 = fresh_player1;
+                self.game.player2 = fresh_player2;
+                self.game.balls = fresh_balls;
+            }
+            if collision_check_score(&self.game.player2, &self.game.balls, 1.0) {
+                self.game.score1 += 1;
+                let (fresh_player1, fresh_player2, fresh_balls) = reset_field(width);
+                self.game.player1 = fresh_player1;
+                self.game.player2 = fresh_player2;
+                self.game.balls = fresh_balls;
+            }
+
+            
+
             // Finally we check for our end state.
             // I want to have a nice death screen eventually,
             // but for now we just quit.
@@ -506,8 +538,8 @@ impl EventHandler for MainState {
         let score1_dest = Point2::new(10.0, 10.0);
         let score2_dest = Point2::new(250.0, 10.0);
 
-        let score1_str = format!("X Velocity: {}", self.game.player1.x_velocity);
-        let score2_str = format!("Y Velocity: {}", self.game.player1.y_velocity);
+        let score1_str = format!("Player 1: {}", self.game.score1);
+        let score2_str = format!("Player 2: {}", self.game.score2);
 
         let score1_display = graphics::Text::new((score1_str, self.assets.font, 32.0));
         let score2_display = graphics::Text::new((score2_str, self.assets.font, 32.0));
