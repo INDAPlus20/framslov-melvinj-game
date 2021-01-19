@@ -202,10 +202,32 @@ fn player_handle_input(object: &mut PhysObject, input: &InputState) {
     object.y_velocity += PLAYER_SPEED * (input.yaxis1pos + input.yaxis1neg);
 }
 
+fn pickup_ball(player: &mut PhysObject, ball: &PhysObject) {
+    if player.hold != 0.0 {
+        return //already holding
+    }
+    let max_pickup_vel = 10.0;
+    if ((ball.x_velocity)*(ball.x_velocity) + (ball.y_velocity)*(ball.y_velocity)).sqrt() < max_pickup_vel {
+        player.hold = ball.id;
+        //Successful pickup!
+    }
+    // Too fast...
+}
+
     // TODO Update position
 
 fn update_object_position(object: &mut PhysObject, width_lower: f32, width_upper: f32, height: f32, dt: f32) {
     // Clamp the velocity to the max *efficiently*
+
+    let drag_factor = 0.998; //How much of velocity is kept between updates
+    match &object.tag {
+        PhysType::Ball => {
+            object.x_velocity *= drag_factor;
+            object.y_velocity *= drag_factor;
+        },
+        _ => ()
+    }
+
     if object.x_velocity.abs() > MAX_PHYSICS_VEL {
         object.x_velocity = object.x_velocity.signum() * MAX_PHYSICS_VEL;
     }
@@ -340,7 +362,8 @@ impl Default for InputState {
 struct MainState {
     game: GameState,
     assets: Assets,
-    scriptname: String,
+    source_player1: Option<String>,
+    source_player2: Option<String>,
 }
 
 struct GameState {
@@ -356,7 +379,7 @@ struct GameState {
 }
 
 impl MainState {
-    fn new(ctx: &mut Context, name: String) -> GameResult<MainState> {
+    fn new(ctx: &mut Context, source_player1: Option<String>, source_player2: Option<String>) -> GameResult<MainState> {
         println!("Game resource path: {:?}", ctx.filesystem);
 
         print_instructions();
@@ -381,7 +404,8 @@ impl MainState {
         let s = MainState {
             game: g,
             assets: assets,
-            scriptname: name,
+            source_player1: source_player1,
+            source_player2: source_player2,
         };
 
         Ok(s)
@@ -453,10 +477,20 @@ impl EventHandler for MainState {
             let seconds = 1.0 / (DESIRED_FPS as f32);
 
             // Update the player state based on the user input.
-            let scriptname = &(&(self.scriptname)).clone();
-            println!("Attempting to generate input");
-            self.game.input2 = ai_generate_input(&mut self.game, scriptname);
+            match self.source_player1.as_ref() {
+                Some(scriptname1) => {
+                    self.game.input1 = ai_generate_input(&(self.game), &scriptname1);
+                },
+                None => ()
+            }
+            match self.source_player2.as_ref() {
+                Some(scriptname2) => {
+                    self.game.input2 = ai_generate_input(&(self.game), &scriptname2);
+                },
+                None => ()
+            }
             player_handle_input(&mut self.game.player1, &self.game.input1);
+            player_handle_input(&mut self.game.player2, &self.game.input2);
             
             /*self.player_shot_timeout -= seconds;
             if self.input.fire && self.player_shot_timeout < 0.0 {
@@ -552,35 +586,129 @@ impl EventHandler for MainState {
         _repeat: bool,
     ) {
         match keycode {
-            KeyCode::W => {
-                self.game.input1.yaxis1pos = 1.0;
-            }
-            KeyCode::S => {
-                self.game.input1.yaxis1neg = -1.0;
-            }
-            KeyCode::D => {
-                self.game.input1.xaxis1pos = 1.0;
-            }
-            KeyCode::A => {
-                self.game.input1.xaxis1neg = -1.0;
-            }
-            KeyCode::Space => {
-                let coll_balls = self.collision_check();
-                if self.game.player1.hold == 0.0 && !coll_balls.0.is_empty() {
-                    self.game.player1.hold = coll_balls.0[0];
-                }
-            }
             KeyCode::P => {
                 let img = graphics::screenshot(ctx).expect("Could not take screenshot");
                 img.encode(ctx, graphics::ImageFormat::Png, "/screenshot.png")
-                    .expect("Could not save screenshot");
+                .expect("Could not save screenshot");
             }
             KeyCode::Escape => event::quit(ctx),
             _ => (), // Do nothing
         }
+        if self.source_player1.is_none() {
+            match keycode {
+                KeyCode::W => {
+                    self.game.input1.yaxis1pos = 1.0;
+                }
+                KeyCode::S => {
+                    self.game.input1.yaxis1neg = -1.0;
+                }
+                KeyCode::D => {
+                    self.game.input1.xaxis1pos = 1.0;
+                }
+                KeyCode::A => {
+                    self.game.input1.xaxis1neg = -1.0;
+                }
+                KeyCode::Space => {
+                    let coll_balls = self.collision_check();
+                    if !coll_balls.0.is_empty() {
+                        //How to get ball as PhysObject from id:
+                        let ball = &self.game.balls[ball_id_to_elem(&self.game.balls, coll_balls.0[0]).unwrap()];
+                        pickup_ball(&mut self.game.player1, ball);
+                    }
+                }
+                _ => (), // Do nothing
+            }
+        }
+        if self.source_player2.is_none() {
+            match keycode {
+                KeyCode::Up => {
+                    self.game.input2.yaxis1pos = 1.0;
+                }
+                KeyCode::Down => {
+                    self.game.input2.yaxis1neg = -1.0;
+                }
+                KeyCode::Right => {
+                    self.game.input2.xaxis1pos = 1.0;
+                }
+                KeyCode::Left => {
+                    self.game.input2.xaxis1neg = -1.0;
+                }
+                KeyCode::Return => {
+                    let coll_balls = self.collision_check();
+                    if !coll_balls.1.is_empty() {
+                        //How to get ball as PhysObject from id:
+                        let ball = &self.game.balls[ball_id_to_elem(&self.game.balls, coll_balls.1[0]).unwrap()];
+                        pickup_ball(&mut self.game.player2, ball);
+                    }
+                }
+                _ => (), // Do nothing
+            }
+        }
     }
 
     fn key_up_event(&mut self, _ctx: &mut Context, keycode: KeyCode, _keymod: KeyMods) {
+        if self.source_player1.is_none() {
+            match keycode {
+                KeyCode::W => {
+                    self.game.input1.yaxis1pos = 0.0;
+                }
+                KeyCode::S => {
+                    self.game.input1.yaxis1neg = 0.0;
+                }
+                KeyCode::D => {
+                    self.game.input1.xaxis1pos = 0.0;
+                }
+                KeyCode::A => {
+                    self.game.input1.xaxis1neg = 0.0;
+                }
+                KeyCode::Space => {
+                    let id = ball_id_to_elem(&self.game.balls, self.game.player1.hold);
+                    if id.is_some() {
+                        match id {
+                            Some(x) => {
+                                self.game.balls[x].x_velocity = self.game.player1.x_velocity;
+                                self.game.balls[x].y_velocity = self.game.player1.y_velocity;
+                            },
+                            _ => ()
+                        }
+                    }
+                    self.game.player1.hold = 0.0;
+                }
+                _ => (), // Do nothing
+            }
+        }
+        if self.source_player2.is_none() {
+            match keycode {
+                KeyCode::Up => {
+                    self.game.input2.yaxis1pos = 0.0;
+                }
+                KeyCode::Down => {
+                    self.game.input2.yaxis1neg = 0.0;
+                }
+                KeyCode::Right => {
+                    self.game.input2.xaxis1pos = 0.0;
+                }
+                KeyCode::Left => {
+                    self.game.input2.xaxis1neg = 0.0;
+                }
+                KeyCode::Return => {
+                    let id = ball_id_to_elem(&self.game.balls, self.game.player2.hold);
+                    if id.is_some() {
+                        match id {
+                            Some(x) => {
+                                self.game.balls[x].x_velocity = self.game.player2.x_velocity;
+                                self.game.balls[x].y_velocity = self.game.player2.y_velocity;
+                            },
+                            _ => ()
+                        }
+                    }
+                    self.game.player2.hold = 0.0;
+                }
+                _ => (), // Do nothing
+            }
+        }
+
+/*
         match keycode {
             KeyCode::W => {
                 self.game.input1.yaxis1pos = 0.0;
@@ -606,7 +734,7 @@ impl EventHandler for MainState {
                 self.game.player1.hold = 0.0;
             }
             _ => (), // Do nothing
-        }
+        }*/
     }
 }
 
@@ -627,8 +755,10 @@ fn test_plugin(a: isize, b: isize, name: &str) -> isize {
     }
 }
 
-fn ai_generate_input(state: &mut GameState, name: &str) -> InputState {
+
+fn ai_generate_input(state: &GameState, name: &str) -> InputState {
     let lib = Library::new(name).unwrap();
+
     unsafe {
         let func: Symbol<AIFunc> = lib.get(b"calculate_move").unwrap();
         func(state)
@@ -646,7 +776,7 @@ fn compile_file(path: &Path) {
 /// **********************************************************************
 
 pub fn main() -> GameResult {
-
+    let args: Vec<String> = env::args().collect();
     //AI script loading
     let paths = fs::read_dir("src/script/").unwrap();
 
@@ -655,6 +785,8 @@ pub fn main() -> GameResult {
     println!("Reading files from script folder:");
 
     //Iterate over paths
+    let mut valid_scripts: Vec<String> = Vec::new();
+
     for path_prewrap in paths {
         let path = path_prewrap.unwrap().path();
 
@@ -696,13 +828,23 @@ pub fn main() -> GameResult {
             panic!();
         }
         println!("wee");
-        println!("{}+{}:{}",1,3,test_plugin(1,3, full_path.as_str()));
+      
+        let answer = test_plugin(1,3, full_path.as_str());
+        println!("{}+{}:{}",1,3,answer);
+
+        if answer != 4 {
+            continue
+            //Not correct, script disqualified
+        }
 
         println!("Test finished:");
 
         //If it has not panicked by now, store the script file name
-        maybe_name = Some(full_path);
+        valid_scripts.push(full_path);
+        //maybe_name = Some(full_path);
     }
+
+
 
 
 
@@ -723,12 +865,40 @@ pub fn main() -> GameResult {
 
     let (ctx, events_loop) = &mut cb.build()?;
 
+    let mut player1: Option<String> = None;
+    let mut player2: Option<String> = None;
+
     
-    if maybe_name.is_none() {
-        eprintln!("No script"); 
-        panic!("NO SCRIPT LOADED")
+    for valid in valid_scripts {
+        println!("currently checking: {} against {} and {}", valid, args.get(1).unwrap(), args.get(2).unwrap());
+        match args.get(1) {
+            Some(arg) => {
+                if valid.contains(arg) {
+                    player1 = Some(valid.clone());
+                }
+            },
+            None => ()
+        }
+        match args.get(2) {
+            Some(arg) => {
+                if valid.contains(arg) {
+                    player2 = Some(valid.clone());
+                }
+            },
+            None => ()
+        }
+    }
+    
+
+    match player1.clone() {
+        Some(name) => println!("Script {} loaded for P1", name),
+        None => println!("No script loaded for P1"),
+    }
+    match player2.clone() {
+        Some(name) => println!("Script {} loaded for P2", name),
+        None => println!("No script loaded for P2"),
     }
 
-    let game = &mut MainState::new(ctx, maybe_name.unwrap())?;
+    let game = &mut MainState::new(ctx, player1, player2)?;
     event::run(ctx, events_loop, game)
 }
