@@ -1,24 +1,24 @@
 pub struct GameState {
-    player1: PhysObject,
-    player2: PhysObject,
-    balls: Vec<PhysObject>,
-    score1: i32,
-    score2: i32,
-    screen_width: f32,
-    screen_height: f32,
-    input1: InputState,
-    input2: InputState,
+    pub player1: PhysObject,
+    pub player2: PhysObject,
+    pub balls: Vec<PhysObject>,
+    pub score1: i32,
+    pub score2: i32,
+    pub screen_width: f32,
+    pub screen_height: f32,
+    pub input1: InputState,
+    pub input2: InputState,
 }
 
 #[derive(Debug)]
 pub struct PhysObject {
-    tag: PhysType,
-    id: f32,
-    hold: f32,
-    pos: (f32, f32),
-    x_velocity: f32,
-    y_velocity: f32,
-    bbox_size: f32,
+    pub tag: PhysType,
+    pub id: f32,
+    pub hold: f32,
+    pub pos: (f32, f32),
+    pub x_velocity: f32,
+    pub y_velocity: f32,
+    pub bbox_size: f32,
 }
 
 #[derive(Debug)]
