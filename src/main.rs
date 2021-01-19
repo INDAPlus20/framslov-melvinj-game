@@ -139,17 +139,17 @@ fn ball_id_to_elem(balls: &Vec<PhysObject>, id: f32) -> Option<usize> {
             return Some(index);
         }
     }
-    
     return None;
 }
 
 fn ball_follow(player: &PhysObject, balls: &mut Vec<PhysObject>) {
     let index = ball_id_to_elem(&balls, player.hold);
-    if index.is_some() {
-        match index {
-            Some(x) => balls[x].pos = player.pos,
-            _ => ()
-        }
+    match index {
+        Some(x) => {
+            balls[x].pos = player.pos;
+            balls[x].hold = player.id;
+        },
+        _ => ()
     }
 }
 
@@ -186,18 +186,6 @@ fn ball_halt(ball: &mut PhysObject, dt: f32) {
         ball.y_velocity = 0.0;
         ball.hold = 0.0;
     }
-}
-
-fn pickup_ball(player: &mut PhysObject, ball: &PhysObject) {
-    if player.hold != 0.0 {
-        return //already holding
-    }
-    let max_pickup_vel = 10.0;
-    if ((ball.x_velocity)*(ball.x_velocity) + (ball.y_velocity)*(ball.y_velocity)).sqrt() < max_pickup_vel {
-        player.hold = ball.id;
-        //Successful pickup!
-    }
-    // Too fast...
 }
 
 fn update_object_position(object: &mut PhysObject, width_lower: f32, width_upper: f32, height: f32, dt: f32) {
@@ -247,6 +235,40 @@ fn update_object_position(object: &mut PhysObject, width_lower: f32, width_upper
     }
 }
 
+fn collision_check(player: &PhysObject, balls: &Vec<PhysObject>) -> Vec<f32> {
+    let mut coll_balls = Vec::new();
+    for ball in balls {
+        let pdistance1 = ball.get_pos_p2() - player.get_pos_p2();
+        if pdistance1.norm() < (player.bbox_size + ball.bbox_size) {
+            coll_balls.push(ball.id)
+        }
+    }
+    return coll_balls;
+}
+
+fn ball_pickup(player: &mut PhysObject, balls: &Vec<PhysObject>) {
+    if player.hold != 0.0 {
+        return; //already holding
+    }
+    let coll_balls = collision_check(player, balls);
+    if !coll_balls.is_empty() {
+        let ball = ball_id_to_elem(balls, coll_balls[0]).unwrap();
+        player.hold = balls[ball].id;
+    }
+}
+
+fn ball_drop(player: &mut PhysObject, balls: &mut Vec<PhysObject>) {
+    let ball = ball_id_to_elem(balls, player.hold);
+    match ball {
+        Some(x) => {
+            balls[x].x_velocity = player.x_velocity;
+            balls[x].y_velocity = player.y_velocity;
+        },
+        _ => ()
+    }
+    player.hold = 0.0;
+}
+
 fn collision_check_score(player: &PhysObject, balls: &Vec<PhysObject>, alligment: f32) -> bool {
     for ball in balls {
         let pdistance = ball.get_pos_p2() - player.get_pos_p2();
@@ -281,6 +303,7 @@ struct Assets {
     shot_image: graphics::Image,
     ball_image: graphics::Image,
     ball_red_image: graphics::Image,
+    ball_blue_image: graphics::Image,
     font: graphics::Font,
     shot_sound: audio::Source,
     hit_sound: audio::Source,
@@ -292,8 +315,8 @@ impl Assets {
         let shot_image = graphics::Image::new(ctx, "/shot.png")?;
         let ball_image = graphics::Image::new(ctx, "/ball.png")?;
         let ball_red_image = graphics::Image::new(ctx, "/ball_red.png")?;
+        let ball_blue_image = graphics::Image::new(ctx, "/ball_blue.png")?;
         let font = graphics::Font::new(ctx, "/DejaVuSerif.ttf")?;
-
         let shot_sound = audio::Source::new(ctx, "/pew.ogg")?;
         let hit_sound = audio::Source::new(ctx, "/boom.ogg")?;
 
@@ -302,6 +325,7 @@ impl Assets {
             shot_image,
             ball_image,
             ball_red_image,
+            ball_blue_image,
             font,
             shot_sound,
             hit_sound,
@@ -314,6 +338,7 @@ impl Assets {
             PhysType::Ball => {
                 match object.hold {
                     x if x == 1.0 => &mut self.ball_red_image,
+                    x if x == 2.0 => &mut self.ball_blue_image,
                     _ => &mut self.ball_image,
                 }
             },
@@ -409,22 +434,6 @@ impl MainState {
         };
 
         Ok(s)
-    }
-
-    fn collision_check(&mut self) -> (Vec<f32>, Vec<f32>) {
-        let mut balls1 = Vec::new();
-        let mut balls2 = Vec::new();
-        for ball in &mut self.game.balls {
-            let pdistance1 = ball.get_pos_p2() - self.game.player1.get_pos_p2();
-            if pdistance1.norm() < (self.game.player1.bbox_size + ball.bbox_size) {
-                balls1.push(ball.id)
-            }
-            let pdistance2 = ball.get_pos_p2() - self.game.player2.get_pos_p2();
-            if pdistance2.norm() < (self.game.player2.bbox_size + ball.bbox_size) {
-                balls2.push(ball.id)
-            }
-        }
-        return (balls1, balls2)
     }
 
     fn check_for_level_respawn(&mut self) {
@@ -628,12 +637,7 @@ impl EventHandler for MainState {
                     self.game.input1.xaxis1neg = -1.0;
                 }
                 KeyCode::Space => {
-                    let coll_balls = self.collision_check();
-                    if !coll_balls.0.is_empty() {
-                        //How to get ball as PhysObject from id:
-                        let ball = &self.game.balls[ball_id_to_elem(&self.game.balls, coll_balls.0[0]).unwrap()];
-                        pickup_ball(&mut self.game.player1, ball);
-                    }
+                    ball_pickup(&mut self.game.player1, &self.game.balls);
                 }
                 _ => (), // Do nothing
             }
@@ -653,12 +657,7 @@ impl EventHandler for MainState {
                     self.game.input2.xaxis1neg = -1.0;
                 }
                 KeyCode::Return => {
-                    let coll_balls = self.collision_check();
-                    if !coll_balls.1.is_empty() {
-                        //How to get ball as PhysObject from id:
-                        let ball = &self.game.balls[ball_id_to_elem(&self.game.balls, coll_balls.1[0]).unwrap()];
-                        pickup_ball(&mut self.game.player2, ball);
-                    }
+                    ball_pickup(&mut self.game.player2, &self.game.balls);
                 }
                 _ => (), // Do nothing
             }
@@ -681,17 +680,7 @@ impl EventHandler for MainState {
                     self.game.input1.xaxis1neg = 0.0;
                 }
                 KeyCode::Space => {
-                    let id = ball_id_to_elem(&self.game.balls, self.game.player1.hold);
-                    if id.is_some() {
-                        match id {
-                            Some(x) => {
-                                self.game.balls[x].x_velocity = self.game.player1.x_velocity;
-                                self.game.balls[x].y_velocity = self.game.player1.y_velocity;
-                            },
-                            _ => ()
-                        }
-                    }
-                    self.game.player1.hold = 0.0;
+                    ball_drop(&mut self.game.player1, &mut self.game.balls);
                 }
                 _ => (), // Do nothing
             }
@@ -711,52 +700,11 @@ impl EventHandler for MainState {
                     self.game.input2.xaxis1neg = 0.0;
                 }
                 KeyCode::Return => {
-                    let id = ball_id_to_elem(&self.game.balls, self.game.player2.hold);
-                    if id.is_some() {
-                        match id {
-                            Some(x) => {
-                                self.game.balls[x].x_velocity = self.game.player2.x_velocity;
-                                self.game.balls[x].y_velocity = self.game.player2.y_velocity;
-                            },
-                            _ => ()
-                        }
-                    }
-                    self.game.player2.hold = 0.0;
+                    ball_drop(&mut self.game.player2, &mut self.game.balls);
                 }
                 _ => (), // Do nothing
             }
         }
-
-/*
-        match keycode {
-            KeyCode::W => {
-                self.game.input1.yaxis1pos = 0.0;
-            }
-            KeyCode::S => {
-                self.game.input1.yaxis1neg = 0.0;
-            }
-            KeyCode::D => {
-                self.game.input1.xaxis1pos = 0.0;
-            }
-            KeyCode::A => {
-                self.game.input1.xaxis1neg = 0.0;
-            }
-            KeyCode::Space => {
-                let id = ball_id_to_elem(&self.game.balls, self.game.player1.hold);
-                if id.is_some() {
-                    match id {
-                        Some(x) => {
-                            self.game.balls[x].x_velocity = self.game.player1.x_velocity;
-                            self.game.balls[x].y_velocity = self.game.player1.y_velocity;
-                            self.game.balls[x].hold = 1.0;
-                        }
-                        _ => ()
-                    }
-                }
-                self.game.player1.hold = 0.0;
-            }
-            _ => (), // Do nothing
-        }*/
     }
 }
 
@@ -776,7 +724,6 @@ fn test_plugin(a: isize, b: isize, name: &str) -> isize {
         
     }
 }
-
 
 fn ai_generate_input(state: &GameState, name: &str) -> InputState {
     let lib = Library::new(name).unwrap();
@@ -866,10 +813,6 @@ pub fn main() -> GameResult {
         //maybe_name = Some(full_path);
     }
 
-
-
-
-
     // We add the CARGO_MANIFEST_DIR/resources to the resource paths
     // so that ggez will look in our cargo project directory for files.
     let resource_dir = if let Ok(manifest_dir) = env::var("CARGO_MANIFEST_DIR") {
@@ -890,9 +833,8 @@ pub fn main() -> GameResult {
     let mut player1: Option<String> = None;
     let mut player2: Option<String> = None;
 
-    
     for valid in valid_scripts {
-        println!("currently checking: {} against {} and {}", valid, args.get(1).unwrap(), args.get(2).unwrap());
+        //println!("currently checking: {} against {} and {}", valid, args.get(1).unwrap(), args.get(2).unwrap());
         match args.get(1) {
             Some(arg) => {
                 if valid.contains(arg) {
@@ -911,7 +853,6 @@ pub fn main() -> GameResult {
         }
     }
     
-
     match player1.clone() {
         Some(name) => println!("Script {} loaded for P1", name),
         None => println!("No script loaded for P1"),
