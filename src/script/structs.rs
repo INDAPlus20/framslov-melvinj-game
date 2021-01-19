@@ -35,7 +35,7 @@ pub struct InputState {
 }
 
 #[derive(Debug)]
-enum PhysType {
+pub enum PhysType {
     Player,
     Ball
 }

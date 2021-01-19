@@ -14,7 +14,6 @@ fn main() {
 	}
 	#[no_mangle]
 	pub extern "C" fn calculate_move(game: &GameState) -> InputState {
-        println!("{}",game.player1.pos.0);
         if game.player1.pos.0 < -10.0 {
 		    InputState {
                 xaxis1pos: 1.0,
