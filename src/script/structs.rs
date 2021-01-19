@@ -31,6 +31,7 @@ pub struct InputState {
     pub xaxis2neg: f32,
     pub yaxis2pos: f32,
     pub yaxis2neg: f32,
+    pub holdball: bool,
 }
 
 #[derive(Debug)]

@@ -22,6 +22,7 @@ fn main() {
             xaxis2neg: 0.0,
             yaxis2pos: 0.0,
             yaxis2neg: 0.0,
+            holdball: false,
         }
     }
 }
