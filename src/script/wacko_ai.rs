@@ -7,21 +7,55 @@
 pub mod structs;
 pub use structs::*;
 fn main() {
+
 	#[no_mangle]
 	pub extern "C" fn add(a: isize, b: isize) -> isize {
 		a + b
 	}
 	#[no_mangle]
-	pub extern "C" fn calculate_move(game: &GameState) -> InputState {
-		InputState {
-            xaxis1pos: 1.0,
-            xaxis1neg: 0.0,
-            yaxis1pos: 0.0,
-            yaxis1neg: 0.0,
-            xaxis2pos: 0.0,
-            xaxis2neg: 0.0,
-            yaxis2pos: 0.0,
-            yaxis2neg: 0.0,
+	pub extern "C" fn calculate_move(game: &GameState, p1: bool) -> InputState {
+        //Code here
+
+        //This function is called once per 'tick'
+        if p1 {
+            //script controlling left player
+            if game.player1.pos.0 < -10.0 {
+                InputState {
+                    xaxis1pos: 1.0,
+                    xaxis1neg: 0.0,
+                    yaxis1pos: 0.0,
+                    yaxis1neg: 0.0,
+                    holdball: true,
+                }
+            } else {
+                InputState {
+                    xaxis1pos: 1.0,
+                    xaxis1neg: 0.0,
+                    yaxis1pos: 0.0,
+                    yaxis1neg: 0.0,
+                    holdball: false,
+                }
+            }
+        } else {
+            //right player
+            if game.player2.pos.0 > 10.0 {
+                InputState {
+                    xaxis1pos: 0.0,
+                    xaxis1neg: -1.0,
+                    yaxis1pos: 0.0,
+                    yaxis1neg: 0.0,
+                    holdball: true,
+                }
+            } else {
+                InputState {
+                    xaxis1pos: 0.0,
+                    xaxis1neg: -1.0,
+                    yaxis1pos: 0.0,
+                    yaxis1neg: 0.0,
+                    holdball: false,
+                }
+            }
         }
+
     }
 }

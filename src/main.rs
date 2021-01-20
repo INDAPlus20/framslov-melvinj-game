@@ -25,7 +25,7 @@ use std::fs::{self};
 use std::path::Path;
 
 type AddFunc = unsafe fn(isize, isize) -> isize;
-type AIFunc = unsafe fn(&GameState) -> InputState;
+type AIFunc = unsafe fn(&GameState, bool) -> InputState;
 
 type Point2 = na::Point2<f32>;
 
@@ -170,9 +170,14 @@ const MAX_PHYSICS_VEL: f32 = 200.0;
 /// Deacceleration in pixels per second squared.
 const BALL_DRAG: f32 = 20.0;
 
-fn player_handle_input(object: &mut PhysObject, input: &InputState) {
-    object.x_velocity += PLAYER_ACCELERATION * (input.xaxis1pos + input.xaxis1neg);
-    object.y_velocity += PLAYER_ACCELERATION * (input.yaxis1pos + input.yaxis1neg);
+fn player_handle_input(player: &mut PhysObject, input: &InputState, balls: &mut Vec<PhysObject>) {
+    player.x_velocity += PLAYER_ACCELERATION * (input.xaxis1pos + input.xaxis1neg);
+    player.y_velocity += PLAYER_ACCELERATION * (input.yaxis1pos + input.yaxis1neg);
+    if player.hold == 0.0 && input.holdball {
+        ball_pickup(player, balls);
+    } else if player.hold != 0.0 && !input.holdball {
+        ball_drop(player, balls);
+    }
 }
 
 fn ball_halt(ball: &mut PhysObject, dt: f32) {
@@ -357,10 +362,7 @@ pub struct InputState {
     pub xaxis1neg: f32,
     pub yaxis1pos: f32,
     pub yaxis1neg: f32,
-    pub xaxis2pos: f32,
-    pub xaxis2neg: f32,
-    pub yaxis2pos: f32,
-    pub yaxis2neg: f32,
+    pub holdball: bool,
 }
 
 impl Default for InputState {
@@ -370,10 +372,7 @@ impl Default for InputState {
             xaxis1neg: 0.0,
             yaxis1pos: 0.0,
             yaxis1neg: 0.0,
-            xaxis2pos: 0.0,
-            xaxis2neg: 0.0,
-            yaxis2pos: 0.0,
-            yaxis2neg: 0.0,
+            holdball: false,
         }
     }
 }
@@ -488,18 +487,18 @@ impl EventHandler for MainState {
             // Update the player state based on the user input.
             match self.source_player1.as_ref() {
                 Some(scriptname1) => {
-                    self.game.input1 = ai_generate_input(&(self.game), &scriptname1);
+                    self.game.input1 = ai_generate_input(&(self.game), &scriptname1, true);
                 },
                 None => ()
             }
             match self.source_player2.as_ref() {
                 Some(scriptname2) => {
-                    self.game.input2 = ai_generate_input(&(self.game), &scriptname2);
+                    self.game.input2 = ai_generate_input(&(self.game), &scriptname2, false);
                 },
                 None => ()
             }
-            player_handle_input(&mut self.game.player1, &self.game.input1);
-            player_handle_input(&mut self.game.player2, &self.game.input2);
+            player_handle_input(&mut self.game.player1, &self.game.input1, &mut self.game.balls);
+            player_handle_input(&mut self.game.player2, &self.game.input2, &mut self.game.balls);
             
             /*self.player_shot_timeout -= seconds;
             if self.input.fire && self.player_shot_timeout < 0.0 {
@@ -637,7 +636,8 @@ impl EventHandler for MainState {
                     self.game.input1.xaxis1neg = -1.0;
                 }
                 KeyCode::Space => {
-                    ball_pickup(&mut self.game.player1, &self.game.balls);
+                    self.game.input1.holdball = true;
+                    //ball_pickup(&mut self.game.player1, &self.game.balls);
                 }
                 _ => (), // Do nothing
             }
@@ -657,7 +657,8 @@ impl EventHandler for MainState {
                     self.game.input2.xaxis1neg = -1.0;
                 }
                 KeyCode::Return => {
-                    ball_pickup(&mut self.game.player2, &self.game.balls);
+                    self.game.input2.holdball = true;
+                    //ball_pickup(&mut self.game.player2, &self.game.balls);
                 }
                 _ => (), // Do nothing
             }
@@ -680,7 +681,7 @@ impl EventHandler for MainState {
                     self.game.input1.xaxis1neg = 0.0;
                 }
                 KeyCode::Space => {
-                    ball_drop(&mut self.game.player1, &mut self.game.balls);
+                    self.game.input1.holdball = false;
                 }
                 _ => (), // Do nothing
             }
@@ -700,7 +701,7 @@ impl EventHandler for MainState {
                     self.game.input2.xaxis1neg = 0.0;
                 }
                 KeyCode::Return => {
-                    ball_drop(&mut self.game.player2, &mut self.game.balls);
+                    self.game.input2.holdball = false;
                 }
                 _ => (), // Do nothing
             }
@@ -725,12 +726,12 @@ fn test_plugin(a: isize, b: isize, name: &str) -> isize {
     }
 }
 
-fn ai_generate_input(state: &GameState, name: &str) -> InputState {
+fn ai_generate_input(state: &GameState, name: &str, p1: bool) -> InputState {
     let lib = Library::new(name).unwrap();
 
     unsafe {
         let func: Symbol<AIFunc> = lib.get(b"calculate_move").unwrap();
-        func(state)
+        func(state, p1)
     }
 }
 
