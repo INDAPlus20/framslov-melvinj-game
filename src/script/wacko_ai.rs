@@ -14,7 +14,11 @@ fn main() {
 	}
 	#[no_mangle]
 	pub extern "C" fn calculate_move(game: &GameState, p1: bool) -> InputState {
+        //Code here
+
+        //This function is called once per 'tick'
         if p1 {
+            //script controlling left player
             if game.player1.pos.0 < -10.0 {
                 InputState {
                     xaxis1pos: 1.0,
@@ -33,6 +37,7 @@ fn main() {
                 }
             }
         } else {
+            //right player
             if game.player2.pos.0 > 10.0 {
                 InputState {
                     xaxis1pos: 0.0,
