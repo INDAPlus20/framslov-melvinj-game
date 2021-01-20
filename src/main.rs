@@ -25,7 +25,7 @@ use std::fs::{self};
 use std::path::Path;
 
 type AddFunc = unsafe fn(isize, isize) -> isize;
-type AIFunc = unsafe fn(&GameState) -> InputState;
+type AIFunc = unsafe fn(&GameState, bool) -> InputState;
 
 type Point2 = na::Point2<f32>;
 
@@ -362,10 +362,6 @@ pub struct InputState {
     pub xaxis1neg: f32,
     pub yaxis1pos: f32,
     pub yaxis1neg: f32,
-    pub xaxis2pos: f32,
-    pub xaxis2neg: f32,
-    pub yaxis2pos: f32,
-    pub yaxis2neg: f32,
     pub holdball: bool,
 }
 
@@ -376,10 +372,6 @@ impl Default for InputState {
             xaxis1neg: 0.0,
             yaxis1pos: 0.0,
             yaxis1neg: 0.0,
-            xaxis2pos: 0.0,
-            xaxis2neg: 0.0,
-            yaxis2pos: 0.0,
-            yaxis2neg: 0.0,
             holdball: false,
         }
     }
@@ -495,13 +487,13 @@ impl EventHandler for MainState {
             // Update the player state based on the user input.
             match self.source_player1.as_ref() {
                 Some(scriptname1) => {
-                    self.game.input1 = ai_generate_input(&(self.game), &scriptname1);
+                    self.game.input1 = ai_generate_input(&(self.game), &scriptname1, true);
                 },
                 None => ()
             }
             match self.source_player2.as_ref() {
                 Some(scriptname2) => {
-                    self.game.input2 = ai_generate_input(&(self.game), &scriptname2);
+                    self.game.input2 = ai_generate_input(&(self.game), &scriptname2, false);
                 },
                 None => ()
             }
@@ -734,12 +726,12 @@ fn test_plugin(a: isize, b: isize, name: &str) -> isize {
     }
 }
 
-fn ai_generate_input(state: &GameState, name: &str) -> InputState {
+fn ai_generate_input(state: &GameState, name: &str, p1: bool) -> InputState {
     let lib = Library::new(name).unwrap();
 
     unsafe {
         let func: Symbol<AIFunc> = lib.get(b"calculate_move").unwrap();
-        func(state)
+        func(state, p1)
     }
 }
 

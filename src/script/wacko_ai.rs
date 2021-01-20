@@ -13,30 +13,42 @@ fn main() {
 		a + b
 	}
 	#[no_mangle]
-	pub extern "C" fn calculate_move(game: &GameState) -> InputState {
-        if game.player1.pos.0 < -10.0 {
-		    InputState {
-                xaxis1pos: 1.0,
-                xaxis1neg: 0.0,
-                yaxis1pos: 0.0,
-                yaxis1neg: 0.0,
-                xaxis2pos: 0.0,
-                xaxis2neg: 0.0,
-                yaxis2pos: 0.0,
-                yaxis2neg: 0.0,
-                holdball: true,
+	pub extern "C" fn calculate_move(game: &GameState, p1: bool) -> InputState {
+        if p1 {
+            if game.player1.pos.0 < -10.0 {
+                InputState {
+                    xaxis1pos: 1.0,
+                    xaxis1neg: 0.0,
+                    yaxis1pos: 0.0,
+                    yaxis1neg: 0.0,
+                    holdball: true,
+                }
+            } else {
+                InputState {
+                    xaxis1pos: 1.0,
+                    xaxis1neg: 0.0,
+                    yaxis1pos: 0.0,
+                    yaxis1neg: 0.0,
+                    holdball: false,
+                }
             }
         } else {
-            InputState {
-                xaxis1pos: 1.0,
-                xaxis1neg: 0.0,
-                yaxis1pos: 0.0,
-                yaxis1neg: 0.0,
-                xaxis2pos: 0.0,
-                xaxis2neg: 0.0,
-                yaxis2pos: 0.0,
-                yaxis2neg: 0.0,
-                holdball: false,
+            if game.player2.pos.0 > 10.0 {
+                InputState {
+                    xaxis1pos: 0.0,
+                    xaxis1neg: -1.0,
+                    yaxis1pos: 0.0,
+                    yaxis1neg: 0.0,
+                    holdball: true,
+                }
+            } else {
+                InputState {
+                    xaxis1pos: 0.0,
+                    xaxis1neg: -1.0,
+                    yaxis1pos: 0.0,
+                    yaxis1neg: 0.0,
+                    holdball: false,
+                }
             }
         }
 

@@ -27,10 +27,6 @@ pub struct InputState {
     pub xaxis1neg: f32,
     pub yaxis1pos: f32,
     pub yaxis1neg: f32,
-    pub xaxis2pos: f32,
-    pub xaxis2neg: f32,
-    pub yaxis2pos: f32,
-    pub yaxis2neg: f32,
     pub holdball: bool,
 }
 
