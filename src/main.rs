@@ -142,11 +142,11 @@ fn ball_id_to_elem(balls: &Vec<PhysObject>, id: f32) -> Option<usize> {
     return None;
 }
 
-fn ball_follow(player: &PhysObject, balls: &mut Vec<PhysObject>) {
+fn ball_follow(player: &PhysObject, balls: &mut Vec<PhysObject>, offset: f32) {
     let index = ball_id_to_elem(&balls, player.hold);
     match index {
         Some(x) => {
-            balls[x].pos.0 = player.pos.0 + 32.0;
+            balls[x].pos.0 = player.pos.0 + offset;
             balls[x].pos.1 = player.pos.1;
             balls[x].hold = player.id;
         },
@@ -324,7 +324,7 @@ impl Assets {
         let ball_image = graphics::Image::new(ctx, "/ball.png")?;
         let ball_red_image = graphics::Image::new(ctx, "/ball_red.png")?;
         let ball_blue_image = graphics::Image::new(ctx, "/ball_blue.png")?;
-        let font = graphics::Font::new(ctx, "/DejaVuSerif.ttf")?;
+        let font = graphics::Font::new(ctx, "/CandyBeans.ttf")?;
         let shot_sound = audio::Source::new(ctx, "/pew.ogg")?;
         let hit_sound = audio::Source::new(ctx, "/boom.ogg")?;
 
@@ -525,8 +525,8 @@ impl EventHandler for MainState {
                 ball_halt(ball, seconds)
             }
 
-            ball_follow(&self.game.player1, &mut self.game.balls);
-            ball_follow(&self.game.player2, &mut self.game.balls);
+            ball_follow(&self.game.player1, &mut self.game.balls, 32.0);
+            ball_follow(&self.game.player2, &mut self.game.balls, -32.0);
 
             // Handle the results of things moving:
             // collision detection, object death, and if
@@ -593,10 +593,10 @@ impl EventHandler for MainState {
         let score1_str = format!("Player 1: {}", self.game.score1);
         let score2_str = format!("Player 2: {}", self.game.score2);
 
-        let score1_display = graphics::Text::new((score1_str, self.assets.font, 32.0));
-        let score2_display = graphics::Text::new((score2_str, self.assets.font, 32.0));
-        graphics::draw(ctx, &score1_display, (score1_dest, 0.0, graphics::WHITE))?;
-        graphics::draw(ctx, &score2_display, (score2_dest, 0.0, graphics::WHITE))?;
+        let score1_display = graphics::Text::new((score1_str, self.assets.font, 48.0));
+        let score2_display = graphics::Text::new((score2_str, self.assets.font, 48.0));
+        graphics::draw(ctx, &score1_display, (score1_dest, 0.0, graphics::Color::new(0.8, 0.8, 0.8, 1.0)))?;
+        graphics::draw(ctx, &score2_display, (score2_dest, 0.0, graphics::Color::new(0.8, 0.8, 0.8, 1.0)))?;
 
         // Then we flip the screen...
         graphics::present(ctx)?;
