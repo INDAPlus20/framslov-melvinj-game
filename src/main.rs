@@ -78,8 +78,8 @@ impl PhysObject {
     }
 }
 
-const PLAYER_BBOX: f32 = 12.0;
-const ROCK_BBOX: f32 = 12.0;
+const PLAYER_BBOX: f32 = 24.0;
+const ROCK_BBOX: f32 = 24.0;
 
 /// *********************************************************************
 /// Now we have some constructor functions for different game objects.
@@ -101,14 +101,14 @@ fn create_balls(balls_num: f32) -> Vec<PhysObject> {
     let mut balls = Vec::new();
     let distance = 100.0;
     balls.append(&mut create_balls_collumn((balls_num / 2.0).ceil(), distance));
-    balls.append(&mut create_balls_collumn((balls_num / 2.0).floor(), distance + 50.0));
+    balls.append(&mut create_balls_collumn((balls_num / 2.0).floor(), distance + 72.0));
 
     return balls;
 }
 
 fn create_balls_collumn(balls_num: f32, distance: f32) -> Vec<PhysObject> {
-    let space = 50.0;
-    let mut space_iter = -((balls_num - 1.0) * 50.0) / 2.0;
+    let space = 72.0;
+    let mut space_iter = -((balls_num - 1.0) * space) / 2.0;
     let mut balls = Vec::new();
     for _ in 0..balls_num as i32 {
         balls.append(&mut create_ball_pair(distance, space_iter));
@@ -146,7 +146,8 @@ fn ball_follow(player: &PhysObject, balls: &mut Vec<PhysObject>) {
     let index = ball_id_to_elem(&balls, player.hold);
     match index {
         Some(x) => {
-            balls[x].pos = player.pos;
+            balls[x].pos.0 = player.pos.0 + 32.0;
+            balls[x].pos.1 = player.pos.1;
             balls[x].hold = player.id;
         },
         _ => ()
@@ -304,7 +305,8 @@ fn world_to_screen_coords(screen_width: f32, screen_height: f32, point: Point2) 
     // TODO Handle assets
 
 struct Assets {
-    player_image: graphics::Image,
+    player_red_image: graphics::Image,
+    player_blue_image: graphics::Image,
     shot_image: graphics::Image,
     ball_image: graphics::Image,
     ball_red_image: graphics::Image,
@@ -316,7 +318,8 @@ struct Assets {
 
 impl Assets {
     fn new(ctx: &mut Context) -> GameResult<Assets> {
-        let player_image = graphics::Image::new(ctx, "/player.png")?;
+        let player_red_image = graphics::Image::new(ctx, "/player_red.png")?;
+        let player_blue_image = graphics::Image::new(ctx, "/player_blue.png")?;
         let shot_image = graphics::Image::new(ctx, "/shot.png")?;
         let ball_image = graphics::Image::new(ctx, "/ball.png")?;
         let ball_red_image = graphics::Image::new(ctx, "/ball_red.png")?;
@@ -326,7 +329,8 @@ impl Assets {
         let hit_sound = audio::Source::new(ctx, "/boom.ogg")?;
 
         Ok(Assets {
-            player_image,
+            player_red_image,
+            player_blue_image,
             shot_image,
             ball_image,
             ball_red_image,
@@ -339,7 +343,13 @@ impl Assets {
 
     fn actor_image(&mut self, object: &PhysObject) -> &mut graphics::Image {
         match object.tag {
-            PhysType::Player => &mut self.player_image,
+            PhysType::Player => {
+                match object.id {
+                    x if x == 1.0 => &mut self.player_red_image,
+                    x if x == 2.0 => &mut self.player_blue_image,
+                    _ => &mut self.ball_image,
+                }
+            }
             PhysType::Ball => {
                 match object.hold {
                     x if x == 1.0 => &mut self.ball_red_image,
