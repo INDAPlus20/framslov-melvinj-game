@@ -4,7 +4,7 @@
 //! non-trivial enough to be interesting.
 
 use ggez;
-use ggez::audio;
+// use ggez::audio;
 // use ggez::audio::SoundSource;
 use ggez::conf;
 use ggez::event::{self, EventHandler, KeyCode, KeyMods};
@@ -30,12 +30,8 @@ type AIFunc = unsafe fn(&GameState, bool) -> InputState;
 type Point2 = na::Point2<f32>;
 
 /// *********************************************************************
-/// Now we define our Actors.
-/// An Actor is anything in the game world.
-/// We're not *quite* making a real entity-component system but it's
-/// pretty close.  For a more complicated game you would want a
-/// real ECS, but for this it's enough to say that all our game objects
-/// contain pretty much the same data.
+/// Now we define our PhysObjects.
+/// A PhysObject is anything in the game world.
 /// **********************************************************************
 #[derive(Debug)]
 enum PhysType {
@@ -54,6 +50,7 @@ struct PhysObject {
     bbox_size: f32,
 }
 
+// We use cells to allow each ball a unique ID
 thread_local!(static BALL_ID: Cell<f32> = Cell::new(2.0));
 
 impl PhysObject {
@@ -78,11 +75,11 @@ impl PhysObject {
     }
 }
 
-const PLAYER_BBOX: f32 = 12.0;
-const ROCK_BBOX: f32 = 12.0;
+const PLAYER_BBOX: f32 = 24.0;
+const ROCK_BBOX: f32 = 24.0;
 
 /// *********************************************************************
-/// Now we have some constructor functions for different game objects.
+/// Now we have some constructor functions for different PhysObject.
 /// **********************************************************************
 
 fn create_player(spawn_pos: (f32, f32), player_id: f32) -> PhysObject {
@@ -101,14 +98,14 @@ fn create_balls(balls_num: f32) -> Vec<PhysObject> {
     let mut balls = Vec::new();
     let distance = 100.0;
     balls.append(&mut create_balls_collumn((balls_num / 2.0).ceil(), distance));
-    balls.append(&mut create_balls_collumn((balls_num / 2.0).floor(), distance + 50.0));
+    balls.append(&mut create_balls_collumn((balls_num / 2.0).floor(), distance + 72.0));
 
     return balls;
 }
 
 fn create_balls_collumn(balls_num: f32, distance: f32) -> Vec<PhysObject> {
-    let space = 50.0;
-    let mut space_iter = -((balls_num - 1.0) * 50.0) / 2.0;
+    let space = 72.0;
+    let mut space_iter = -((balls_num - 1.0) * space) / 2.0;
     let mut balls = Vec::new();
     for _ in 0..balls_num as i32 {
         balls.append(&mut create_ball_pair(distance, space_iter));
@@ -142,11 +139,12 @@ fn ball_id_to_elem(balls: &Vec<PhysObject>, id: f32) -> Option<usize> {
     return None;
 }
 
-fn ball_follow(player: &PhysObject, balls: &mut Vec<PhysObject>) {
+fn ball_follow(player: &PhysObject, balls: &mut Vec<PhysObject>, offset: f32) {
     let index = ball_id_to_elem(&balls, player.hold);
     match index {
         Some(x) => {
-            balls[x].pos = player.pos;
+            balls[x].pos.0 = player.pos.0 + offset;
+            balls[x].pos.1 = player.pos.1;
             balls[x].hold = player.id;
         },
         _ => ()
@@ -154,10 +152,10 @@ fn ball_follow(player: &PhysObject, balls: &mut Vec<PhysObject>) {
 }
 
 /// *********************************************************************
-/// Now we make functions to handle physics.  We do simple Newtonian
+/// Now we make functions to handle physics. We do simple Newtonian
 /// physics (so we do have inertia), and cap the max speed so that we
-/// don't have to worry too much about small objects clipping through
-/// each other.
+/// don't have to worry too much about the insane levels of power a 
+/// player could reach.
 ///
 /// Our unit of world space is simply pixels, though we do transform
 /// the coordinate system so that +y is up and -y is down.
@@ -195,15 +193,6 @@ fn ball_halt(ball: &mut PhysObject, dt: f32) {
 
 fn update_object_position(object: &mut PhysObject, width_lower: f32, width_upper: f32, height: f32, dt: f32) {
     // Clamp the velocity to the max *efficiently*
-
-    let drag_factor = 0.998; //How much of velocity is kept between updates
-    match &object.tag {
-        PhysType::Ball => {
-            object.x_velocity *= drag_factor;
-            object.y_velocity *= drag_factor;
-        },
-        _ => ()
-    }
 
     if object.x_velocity.abs() > MAX_PHYSICS_VEL {
         object.x_velocity = object.x_velocity.signum() * MAX_PHYSICS_VEL;
@@ -296,50 +285,48 @@ fn world_to_screen_coords(screen_width: f32, screen_height: f32, point: Point2) 
 
 /// **********************************************************************
 /// So that was the real meat of our game.  Now we just need a structure
-/// to contain the images, sounds, etc. that we need to hang on to; this
+/// to contain the images and font. That we need to hang on to; this
 /// is our "asset management system".  All the file names and such are
 /// just hard-coded.
 /// **********************************************************************
 
-    // TODO Handle assets
-
 struct Assets {
-    player_image: graphics::Image,
-    shot_image: graphics::Image,
+    player_red_image: graphics::Image,
+    player_blue_image: graphics::Image,
     ball_image: graphics::Image,
     ball_red_image: graphics::Image,
     ball_blue_image: graphics::Image,
     font: graphics::Font,
-    shot_sound: audio::Source,
-    hit_sound: audio::Source,
 }
 
 impl Assets {
     fn new(ctx: &mut Context) -> GameResult<Assets> {
-        let player_image = graphics::Image::new(ctx, "/player.png")?;
-        let shot_image = graphics::Image::new(ctx, "/shot.png")?;
+        let player_red_image = graphics::Image::new(ctx, "/player_red.png")?;
+        let player_blue_image = graphics::Image::new(ctx, "/player_blue.png")?;
         let ball_image = graphics::Image::new(ctx, "/ball.png")?;
         let ball_red_image = graphics::Image::new(ctx, "/ball_red.png")?;
         let ball_blue_image = graphics::Image::new(ctx, "/ball_blue.png")?;
-        let font = graphics::Font::new(ctx, "/DejaVuSerif.ttf")?;
-        let shot_sound = audio::Source::new(ctx, "/pew.ogg")?;
-        let hit_sound = audio::Source::new(ctx, "/boom.ogg")?;
+        let font = graphics::Font::new(ctx, "/CandyBeans.ttf")?;
 
         Ok(Assets {
-            player_image,
-            shot_image,
+            player_red_image,
+            player_blue_image,
             ball_image,
             ball_red_image,
             ball_blue_image,
             font,
-            shot_sound,
-            hit_sound,
         })
     }
 
     fn actor_image(&mut self, object: &PhysObject) -> &mut graphics::Image {
         match object.tag {
-            PhysType::Player => &mut self.player_image,
+            PhysType::Player => {
+                match object.id {
+                    x if x == 1.0 => &mut self.player_red_image,
+                    x if x == 2.0 => &mut self.player_blue_image,
+                    _ => &mut self.ball_image,
+                }
+            }
             PhysType::Ball => {
                 match object.hold {
                     x if x == 1.0 => &mut self.ball_red_image,
@@ -435,11 +422,11 @@ impl MainState {
         Ok(s)
     }
 
-    fn check_for_level_respawn(&mut self) {
+    /* fn check_for_level_respawn(&mut self) {
         if self.game.score1 >= 3 || self.game.score2 >= 3 {
             // Reset game
         }
-    }
+    } */
 }
 
 /// **********************************************************************
@@ -448,14 +435,13 @@ impl MainState {
 
 fn print_instructions() {
     println!();
-    println!("Welcome to ASTROBLASTO!");
+    println!("Welcome to ASTROBLASTO 2: Electric Bogaloo!");
     println!();
     println!("How to play:");
-    println!("L/R arrow keys rotate your ship, up thrusts, space bar fires");
+    println!("Player 1: WASD to move your ship, space bar to pick up and release balls");
+    println!("Player 2: arrow keys to move your ship, enter to pick up and release balls");
     println!();
 }
-
-    // TODO Draw
 
 fn draw_physobject(
     assets: &mut Assets,
@@ -499,31 +485,21 @@ impl EventHandler for MainState {
             }
             player_handle_input(&mut self.game.player1, &self.game.input1, &mut self.game.balls);
             player_handle_input(&mut self.game.player2, &self.game.input2, &mut self.game.balls);
-            
-            /*self.player_shot_timeout -= seconds;
-            if self.input.fire && self.player_shot_timeout < 0.0 {
-                self.fire_player_shot();
-            }*/
 
-            // Update the physics for all actors.
+            // Update the physics for all PhysObjects.
             // First the players...
             update_object_position(&mut self.game.player1, -self.game.screen_width as f32 / 2.0, 0.0, self.game.screen_height as f32, seconds);
             update_object_position(&mut self.game.player2, 0.0, self.game.screen_width as f32 / 2.0, self.game.screen_height as f32, seconds);
-            // Then the balls...
+            // Then the balls!
             for ball in &mut self.game.balls {
                 update_object_position(ball, -self.game.screen_width as f32 / 2.0, self.game.screen_width as f32 / 2.0, self.game.screen_height as f32, seconds);
                 ball_halt(ball, seconds)
             }
 
-            ball_follow(&self.game.player1, &mut self.game.balls);
-            ball_follow(&self.game.player2, &mut self.game.balls);
+            ball_follow(&self.game.player1, &mut self.game.balls, 32.0);
+            ball_follow(&self.game.player2, &mut self.game.balls, -32.0);
 
-            // Handle the results of things moving:
-            // collision detection, object death, and if
-            // we have killed all the rocks in the level,
-            // spawn more of them.
-
-            self.check_for_level_respawn();
+            //self.check_for_level_respawn();
 
             let (width, _) = graphics::drawable_size(ctx);
             if collision_check_score(&self.game.player1, &self.game.balls, 2.0) {
@@ -540,17 +516,6 @@ impl EventHandler for MainState {
                 self.game.player2 = fresh_player2;
                 self.game.balls = fresh_balls;
             }
-
-            
-
-            // Finally we check for our end state.
-            // I want to have a nice death screen eventually,
-            // but for now we just quit.
-            
-            /*if self.player.life <= 0.0 {
-                println!("Game over!");
-                let _ = event::quit(ctx);
-            }*/
         }
 
         Ok(())
@@ -559,7 +524,7 @@ impl EventHandler for MainState {
     fn draw(&mut self, ctx: &mut Context) -> GameResult {
         // Our drawing is quite simple.
         // Just clear the screen...
-        graphics::clear(ctx, graphics::BLACK);
+        graphics::clear(ctx, graphics::Color::new(0.2, 0.2, 0.2, 1.0));
 
         // Loop over all objects drawing them...
         {
@@ -578,15 +543,15 @@ impl EventHandler for MainState {
 
         // And draw the GUI elements in the right places.
         let score1_dest = Point2::new(10.0, 10.0);
-        let score2_dest = Point2::new(250.0, 10.0);
+        let score2_dest = Point2::new(480.0, 10.0);
 
-        let score1_str = format!("Player 1: {}", self.game.score1);
-        let score2_str = format!("Player 2: {}", self.game.score2);
+        let score1_str = format!("Score: {}", self.game.score1);
+        let score2_str = format!("Score: {}", self.game.score2);
 
-        let score1_display = graphics::Text::new((score1_str, self.assets.font, 32.0));
-        let score2_display = graphics::Text::new((score2_str, self.assets.font, 32.0));
-        graphics::draw(ctx, &score1_display, (score1_dest, 0.0, graphics::WHITE))?;
-        graphics::draw(ctx, &score2_display, (score2_dest, 0.0, graphics::WHITE))?;
+        let score1_display = graphics::Text::new((score1_str, self.assets.font, 48.0));
+        let score2_display = graphics::Text::new((score2_str, self.assets.font, 48.0));
+        graphics::draw(ctx, &score1_display, (score1_dest, 0.0, graphics::Color::new(1.0, 0.3, 0.3, 1.0)))?;
+        graphics::draw(ctx, &score2_display, (score2_dest, 0.0, graphics::Color::new(0.3, 0.3, 1.0, 1.0)))?;
 
         // Then we flip the screen...
         graphics::present(ctx)?;
@@ -637,7 +602,6 @@ impl EventHandler for MainState {
                 }
                 KeyCode::Space => {
                     self.game.input1.holdball = true;
-                    //ball_pickup(&mut self.game.player1, &self.game.balls);
                 }
                 _ => (), // Do nothing
             }
@@ -658,7 +622,6 @@ impl EventHandler for MainState {
                 }
                 KeyCode::Return => {
                     self.game.input2.holdball = true;
-                    //ball_pickup(&mut self.game.player2, &self.game.balls);
                 }
                 _ => (), // Do nothing
             }
@@ -751,7 +714,7 @@ pub fn main() -> GameResult {
     let paths = fs::read_dir("src/script/").unwrap();
 
     //Name of selected script with functioning test function
-    let mut maybe_name: Option<String> = None;
+    // let mut maybe_name: Option<String> = None;
     println!("Reading files from script folder:");
 
     //Iterate over paths
